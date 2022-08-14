@@ -6,8 +6,15 @@ import (
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"golang.org/x/sys/unix"
+	"gopkg.in/natefinch/lumberjack.v2"
+	"log"
 	"os"
 	"path/filepath"
+)
+
+var (
+	logger log.Logger
+	cfg    Config
 )
 
 // Config is an application configuration structure
@@ -30,8 +37,7 @@ func DirSize(path string) (DirInfoStruct, error) {
 	var info = DirInfoStruct{}
 	err := filepath.Walk(path, func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil {
-			//err = fmt.Errorf("WalkError: %w", err)
-			//color.HiYellow(err.Error())
+			logger.Println(err)
 			//return err
 		} else {
 			//fmt.Println(Path)
@@ -74,13 +80,32 @@ func GetFreeSpace() (int64, error) {
 	return int64(stat.Bavail) * stat.Bsize, nil
 }
 
-func main() {
-	var cfg Config
+func InitLogger() {
+	e, err := os.OpenFile("./space-monitor.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Printf("error opening file: %v", err)
+		os.Exit(1)
+	}
+	logger = *log.New(e, "", log.Ldate|log.Ltime|log.Lshortfile)
+	logger.SetOutput(&lumberjack.Logger{
+		Filename:   "./space-monitor.log",
+		MaxSize:    1, // megabytes after which new file is created
+		MaxBackups: 1, // number of backups
+		//MaxAge:     28, //days
+	})
+}
+
+func LoadConfig() {
 	err := cleanenv.ReadConfig("config.yaml", &cfg)
 	if err != nil {
 		color.HiRed(err.Error())
 		return
 	}
+}
+
+func main() {
+	InitLogger()
+	LoadConfig()
 
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)

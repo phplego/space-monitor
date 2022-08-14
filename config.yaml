@@ -1,0 +1,10 @@
+dirs:
+  - /etc
+  - /var
+  - /home/dub/WorkStuff
+  - /home/dub/Apps
+  - /home/dub/.config
+
+rules:
+  - aaa
+  - bbb

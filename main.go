@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/fatih/color1"
+	"github.com/fatih/color"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"golang.org/x/sys/unix"

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"github.com/fatih/color"
 	"github.com/ilyakaznacheev/cleanenv"
+	"github.com/jedib0t/go-pretty/v6/table"
 	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
-	"strconv"
 )
 
 // Config is an application configuration structure
@@ -82,6 +82,10 @@ func main() {
 		return
 	}
 
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.AppendHeader(table.Row{"path", "size", "dirs", "files"})
+
 	// for each directory
 	for _, rule := range cfg.Dirs {
 		dirInfo, err := DirSize(rule.Path)
@@ -89,12 +93,13 @@ func main() {
 			color.HiRed(err.Error())
 			//continue
 		}
-		fmt.Println("size of " + rule.Path + ": " + HumanSize(dirInfo.size) +
-			" files: " + strconv.Itoa(dirInfo.files) +
-			" dirs: " + strconv.Itoa(dirInfo.dirs))
+		t.AppendRow([]interface{}{rule.Path, HumanSize(dirInfo.size), dirInfo.dirs, dirInfo.files})
 	}
 
 	// calculate free space
 	var space, _ = GetFreeSpace()
-	fmt.Println("Free space:", HumanSize(space))
+
+	t.AppendSeparator()
+	t.AppendFooter(table.Row{"free space", HumanSize(space)})
+	t.Render()
 }

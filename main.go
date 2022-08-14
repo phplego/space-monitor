@@ -10,9 +10,14 @@ import (
 	"strconv"
 )
 
-// Config is a application configuration structure
+// Config is an application configuration structure
 type Config struct {
-	Dirs []string `yaml:"dirs"`
+	Dirs []ConfigRule `yaml:"dirs"`
+}
+
+type ConfigRule struct {
+	Path string `yaml:"path"`
+	Rule string `yaml:"rule"`
 }
 
 type DirInfoStruct struct {
@@ -22,14 +27,14 @@ type DirInfoStruct struct {
 }
 
 func DirSize(path string) (DirInfoStruct, error) {
-	var info DirInfoStruct = DirInfoStruct{}
+	var info = DirInfoStruct{}
 	err := filepath.Walk(path, func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil {
 			//err = fmt.Errorf("WalkError: %w", err)
 			//color.HiYellow(err.Error())
 			//return err
 		} else {
-			//fmt.Println(path)
+			//fmt.Println(Path)
 			if !fileInfo.IsDir() {
 				info.files++
 				info.size += fileInfo.Size()
@@ -78,13 +83,13 @@ func main() {
 	}
 
 	// for each directory
-	for _, path := range cfg.Dirs {
-		dirInfo, err := DirSize(path)
+	for _, rule := range cfg.Dirs {
+		dirInfo, err := DirSize(rule.Path)
 		if err != nil {
 			color.HiRed(err.Error())
 			//continue
 		}
-		fmt.Println("size of " + path + ": " + HumanSize(dirInfo.size) +
+		fmt.Println("size of " + rule.Path + ": " + HumanSize(dirInfo.size) +
 			" files: " + strconv.Itoa(dirInfo.files) +
 			" dirs: " + strconv.Itoa(dirInfo.dirs))
 	}

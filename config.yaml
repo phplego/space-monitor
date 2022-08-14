@@ -1,9 +1,12 @@
 dirs:
-  - /etc
-  - /var
-  - /home/dub/WorkStuff
-  - /home/dub/Apps
-  - /home/dub/.config
+  - path: /etc
+    rule: hello
+  - path: /var
+    rule: hello
+  - path: /home/dub/Apps
+    rule: hello
+  - path: /home/dub/.config
+    rule: hello
 
 rules:
   - aaa

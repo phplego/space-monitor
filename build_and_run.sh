@@ -1,3 +1,5 @@
+rm ./space-monitor
+
 go build
 
 if [[ $? -eq 0 ]]

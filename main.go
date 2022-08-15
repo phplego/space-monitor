@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 var (
@@ -19,18 +20,19 @@ var (
 
 // Config is an application configuration structure
 type Config struct {
-	Dirs []ConfigRule `yaml:"dirs"`
+	Dirs []Config_DirectorySettings `yaml:"dirs"`
 }
 
-type ConfigRule struct {
+type Config_DirectorySettings struct {
 	Path string `yaml:"path"`
 	Rule string `yaml:"rule"`
 }
 
 type DirInfoStruct struct {
-	size  int64
-	files int
-	dirs  int
+	size     int64
+	files    int
+	dirs     int
+	walkTime int
 }
 
 func DirSize(path string) (DirInfoStruct, error) {
@@ -38,9 +40,8 @@ func DirSize(path string) (DirInfoStruct, error) {
 	err := filepath.Walk(path, func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil {
 			logger.Println(err)
-			//return err
+			//return err // return error if you want to break walking
 		} else {
-			//fmt.Println(Path)
 			if !fileInfo.IsDir() {
 				info.files++
 				info.size += fileInfo.Size()
@@ -53,17 +54,17 @@ func DirSize(path string) (DirInfoStruct, error) {
 	return info, err
 }
 
-func HumanSize(b int64) string {
+func HumanSize(bytes int64) string {
 	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
 	}
 	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
+	for n := bytes / unit; n >= unit; n /= unit {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 func GetFreeSpace() (int64, error) {
@@ -104,21 +105,29 @@ func LoadConfig() {
 }
 
 func main() {
+	mainStart := time.Now()
 	InitLogger()
 	LoadConfig()
 
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
-	t.AppendHeader(table.Row{"path", "size", "dirs", "files"})
+	t.AppendHeader(table.Row{"path", "size", "dirs", "files", "time"})
 
 	// for each directory
 	for _, rule := range cfg.Dirs {
+		start := time.Now()
 		dirInfo, err := DirSize(rule.Path)
 		if err != nil {
 			color.HiRed(err.Error())
 			//continue
 		}
-		t.AppendRow([]interface{}{rule.Path, HumanSize(dirInfo.size), dirInfo.dirs, dirInfo.files})
+		t.AppendRow([]interface{}{
+			rule.Path,
+			HumanSize(dirInfo.size),
+			dirInfo.dirs,
+			dirInfo.files,
+			time.Since(start),
+		})
 	}
 
 	// calculate free space
@@ -127,4 +136,6 @@ func main() {
 	t.AppendSeparator()
 	t.AppendFooter(table.Row{"free space", HumanSize(space)})
 	t.Render()
+
+	fmt.Println("total time", time.Since(mainStart))
 }

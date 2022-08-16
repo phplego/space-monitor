@@ -78,7 +78,7 @@ func GetFreeSpace() (int64, error) {
 	}
 
 	// Available blocks * size per block = available space in bytes
-	return int64(stat.Bavail) * stat.Bsize, nil
+	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
 func InitLogger() {

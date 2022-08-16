@@ -110,6 +110,7 @@ func main() {
 	LoadConfig()
 
 	t := table.NewWriter()
+	t.SetStyle(table.StyleRounded)
 	t.SetOutputMirror(os.Stdout)
 	t.AppendHeader(table.Row{"path", "size", "dirs", "files", "time"})
 

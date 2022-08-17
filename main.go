@@ -26,6 +26,8 @@ var (
 	daemonMode = flag.Bool("daemon", false, "Run in background")
 )
 
+const dataDir = "./data"
+
 // Config is an application configuration structure
 type Config struct {
 	Dirs []Config_DirectorySettings `yaml:"dirs"`
@@ -53,7 +55,7 @@ func GetHash(text string) string {
 }
 
 func GetLastSnapshot(dirHash string) DirInfoStruct {
-	files, _ := filepath.Glob(fmt.Sprintf("./snapshot-*-%s.dat", dirHash))
+	files, _ := filepath.Glob(dataDir + fmt.Sprintf("/snapshot-*-%s.dat", dirHash))
 	if files == nil {
 		fmt.Println("no files")
 		return DirInfoStruct{}
@@ -68,7 +70,8 @@ func GetLastSnapshot(dirHash string) DirInfoStruct {
 
 func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 	pathHash := GetHash(path)
-	snapshotName := fmt.Sprintf("snapshot-%s-%s.dat", startTime.Format("2006-01-02 15:04:05"), pathHash)
+	os.Mkdir(dataDir, 0777)
+	snapshotName := fmt.Sprintf(dataDir+"/snapshot-%s-%s.dat", startTime.Format("2006-01-02 15:04:05"), pathHash)
 	snapshotFile, err := os.OpenFile("./"+snapshotName, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		fmt.Printf("error opening file: %v", err)
@@ -108,12 +111,19 @@ func ProcessDirectory(path string) (DirInfoStruct, error) {
 }
 
 func HumanSize(bytes int64) string {
+	var abs = func(v int64) int64 {
+		if v < 0 {
+			return -v
+		}
+		return v
+	}
+
 	const unit = 1024
-	if bytes < unit {
+	if abs(bytes) < unit {
 		return fmt.Sprintf("%d B", bytes)
 	}
 	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
+	for n := bytes / unit; abs(n) >= unit; n /= unit {
 		div *= unit
 		exp++
 	}

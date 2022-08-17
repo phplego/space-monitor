@@ -1,6 +1,10 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/fatih/color"
 	"github.com/ilyakaznacheev/cleanenv"
@@ -10,12 +14,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
 var (
-	logger log.Logger
-	cfg    Config
+	startTime time.Time
+	logger    log.Logger
+	cfg       Config
+
+	daemonMode = flag.Bool("daemon", false, "Run in background")
 )
 
 // Config is an application configuration structure
@@ -29,28 +37,73 @@ type Config_DirectorySettings struct {
 }
 
 type DirInfoStruct struct {
-	size     int64
-	files    int
-	dirs     int
+	Path     string    `json:"path"`
+	Size     int64     `json:"size"`
+	Files    int       `json:"files"`
+	Dirs     int       `json:"dirs"`
+	ModTime  time.Time `json:"mtime"` // time of the latest modified file in the directory
 	walkTime int
 }
 
-func DirSize(path string) (DirInfoStruct, error) {
-	var info = DirInfoStruct{}
+func GetHash(text string) string {
+	//h := xxh3.HashString128(text)
+	//return fmt.Sprintf("%x%x", h.Hi, h.Lo)
+	hash := sha1.Sum([]byte(text))
+	return hex.EncodeToString(hash[:])
+}
+
+func GetLastSnapshot(dirHash string) DirInfoStruct {
+	files, _ := filepath.Glob(fmt.Sprintf("./snapshot-*-%s.dat", dirHash))
+	if files == nil {
+		fmt.Println("no files")
+		return DirInfoStruct{}
+	}
+	sort.Strings(files)
+	last := files[len(files)-1]
+	bytes, _ := os.ReadFile(last)
+	info := DirInfoStruct{}
+	json.Unmarshal(bytes, &info)
+	return info
+}
+
+func SaveDirInfo(path string, dirInfo DirInfoStruct) {
+	pathHash := GetHash(path)
+	snapshotName := fmt.Sprintf("snapshot-%s-%s.dat", startTime.Format("2006-01-02 15:04:05"), pathHash)
+	snapshotFile, err := os.OpenFile("./"+snapshotName, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		fmt.Printf("error opening file: %v", err)
+		os.Exit(1)
+	}
+	bytes, _ := json.Marshal(dirInfo)
+	snapshotFile.WriteString(string(bytes))
+}
+
+func ProcessDirectory(path string) (DirInfoStruct, error) {
+
+	var info = DirInfoStruct{
+		Path: path,
+	}
 	err := filepath.Walk(path, func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil {
 			logger.Println(err)
 			//return err // return error if you want to break walking
 		} else {
-			if !fileInfo.IsDir() {
-				info.files++
-				info.size += fileInfo.Size()
-			} else {
-				info.dirs++
+			modTime := fileInfo.ModTime()
+			if modTime.After(info.ModTime) && modTime.Before(time.Now() /*skip Files from the future*/) {
+				info.ModTime = fileInfo.ModTime()
 			}
+			if fileInfo.IsDir() {
+				info.Dirs++
+			} else {
+				info.Files++
+				info.Size += fileInfo.Size()
+			}
+
+			//fmt.Println( /*GetHash*/ (path), fileInfo.IsDir(), fileInfo.Size())
 		}
 		return nil
 	})
+
 	return info, err
 }
 
@@ -77,17 +130,17 @@ func GetFreeSpace() (int64, error) {
 		return 0, err
 	}
 
-	// Available blocks * size per block = available space in bytes
+	// Available blocks * Size per block = available space in bytes
 	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
 func InitLogger() {
-	e, err := os.OpenFile("./space-monitor.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	file, err := os.OpenFile("./space-monitor.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		fmt.Printf("error opening file: %v", err)
 		os.Exit(1)
 	}
-	logger = *log.New(e, "", log.Ldate|log.Ltime|log.Lshortfile)
+	logger = *log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
 	logger.SetOutput(&lumberjack.Logger{
 		Filename:   "./space-monitor.log",
 		MaxSize:    1, // megabytes after which new file is created
@@ -105,6 +158,9 @@ func LoadConfig() {
 }
 
 func main() {
+	startTime = time.Now()
+	flag.Parse()
+
 	mainStart := time.Now()
 	InitLogger()
 	LoadConfig()
@@ -112,22 +168,36 @@ func main() {
 	t := table.NewWriter()
 	t.SetStyle(table.StyleRounded)
 	t.SetOutputMirror(os.Stdout)
-	t.AppendHeader(table.Row{"path", "size", "dirs", "files", "time"})
+	t.AppendHeader(table.Row{"path", "Size", "Dirs", "Files", "modified", "walk time"})
 
 	// for each directory
-	for _, rule := range cfg.Dirs {
+	for _, dir := range cfg.Dirs {
+
+		dirInfoPrev := GetLastSnapshot(GetHash(dir.Path))
+
 		start := time.Now()
-		dirInfo, err := DirSize(rule.Path)
+		dirInfo, err := ProcessDirectory(dir.Path)
 		if err != nil {
 			color.HiRed(err.Error())
 			//continue
 		}
+
+		SaveDirInfo(dir.Path, dirInfo)
+
+		deltaSize := ""
+		if dirInfo.Size >= dirInfoPrev.Size {
+			deltaSize = " (+" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
+		} else {
+			deltaSize = " (" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
+		}
+
 		t.AppendRow([]interface{}{
-			rule.Path,
-			HumanSize(dirInfo.size),
-			dirInfo.dirs,
-			dirInfo.files,
-			time.Since(start),
+			dir.Path,
+			HumanSize(dirInfo.Size) + deltaSize,
+			dirInfo.Dirs,
+			dirInfo.Files,
+			dirInfo.ModTime.Format(time.RFC822),
+			time.Since(start).Round(time.Millisecond),
 		})
 	}
 
@@ -138,5 +208,12 @@ func main() {
 	t.AppendFooter(table.Row{"free space", HumanSize(space)})
 	t.Render()
 
-	fmt.Println("total time", time.Since(mainStart))
+	fmt.Println("total time", time.Since(mainStart).Round(time.Millisecond))
+
+	if *daemonMode {
+		fmt.Println("Running in daemon mode..")
+		for {
+
+		}
+	}
 }

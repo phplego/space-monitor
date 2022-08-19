@@ -196,7 +196,6 @@ func main() {
 
 	// for each directory
 	for _, dir := range gCfg.Dirs {
-
 		dirInfoPrev = GetLastSnapshot(dir.Path, 0)
 
 		start := time.Now()
@@ -209,7 +208,7 @@ func main() {
 		SaveDirInfo(dir.Path, dirInfo)
 
 		deltaSize := ""
-		if dirInfoPrev.Size != 0 {
+		if dirInfoPrev.Size != 0 && dirInfoPrev.Size != dirInfo.Size {
 			if dirInfo.Size >= dirInfoPrev.Size {
 				deltaSize = " (+" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
 			} else {
@@ -217,11 +216,21 @@ func main() {
 			}
 		}
 
+		deltaDirs := ""
+		if dirInfoPrev.Dirs != 0 && dirInfoPrev.Dirs != dirInfo.Dirs {
+			deltaDirs = " (" + fmt.Sprintf("%+d", dirInfo.Dirs-dirInfoPrev.Dirs) + ")"
+		}
+
+		deltaFiles := ""
+		if dirInfoPrev.Files != 0 && dirInfoPrev.Files != dirInfo.Files {
+			deltaFiles = " (" + fmt.Sprintf("%+d", dirInfo.Files-dirInfoPrev.Files) + ")"
+		}
+
 		tableWriter.AppendRow([]interface{}{
 			dir.Path,
 			HumanSize(dirInfo.Size) + deltaSize,
-			dirInfo.Dirs,
-			dirInfo.Files,
+			strconv.Itoa(dirInfo.Dirs) + deltaDirs,
+			strconv.Itoa(dirInfo.Files) + deltaFiles,
 			dirInfo.ModTime.Format(time.RFC822),
 			time.Since(start).Round(time.Millisecond),
 		})

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -23,6 +24,8 @@ var (
 	logger    log.Logger
 	cfg       Config
 
+	// command line arguments
+	replast    = flag.Bool("replast", false, "Repeat last output (no scan)")
 	daemonMode = flag.Bool("daemon", false, "Run in background")
 )
 
@@ -54,14 +57,18 @@ func GetHash(text string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func GetLastSnapshot(dirHash string) DirInfoStruct {
+func GetLastSnapshot(dirHash string, stepsBack int) DirInfoStruct {
 	files, _ := filepath.Glob(dataDir + fmt.Sprintf("/snapshot-*-%s.dat", dirHash))
 	if files == nil {
 		fmt.Println("no files")
 		return DirInfoStruct{}
 	}
 	sort.Strings(files)
-	last := files[len(files)-1]
+	index := len(files) - 1 - stepsBack
+	if index < 0 || index >= len(files) {
+		fmt.Println("Error: out of bounds snapshot array. index=" + strconv.Itoa(index))
+	}
+	last := files[index]
 	bytes, _ := os.ReadFile(last)
 	info := DirInfoStruct{}
 	json.Unmarshal(bytes, &info)
@@ -183,7 +190,7 @@ func main() {
 	// for each directory
 	for _, dir := range cfg.Dirs {
 
-		dirInfoPrev := GetLastSnapshot(GetHash(dir.Path))
+		dirInfoPrev := GetLastSnapshot(GetHash(dir.Path), 0)
 
 		start := time.Now()
 		dirInfo, err := ProcessDirectory(dir.Path)

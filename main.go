@@ -56,10 +56,10 @@ func GetHash(text string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func GetLastSnapshot(dirHash string, stepsBack int) DirInfoStruct {
-	files, _ := filepath.Glob(dataDir + fmt.Sprintf("/snapshot-*-%s.dat", dirHash))
+func GetLastSnapshot(dir string, stepsBack int) DirInfoStruct {
+	files, _ := filepath.Glob(dataDir + fmt.Sprintf("/snapshot-*-%s.dat", GetHash(dir)))
 	if files == nil {
-		fmt.Println("no files")
+		fmt.Printf("no snapshot files for %s\n", color.BlueString(dir))
 		return DirInfoStruct{}
 	}
 	sort.Strings(files)
@@ -173,6 +173,12 @@ func LoadConfig() {
 	}
 }
 
+func ColorHeader(str string) string {
+	my := color.New(color.FgHiBlue)
+	my.Add(color.Bold)
+	return my.Sprint(str)
+}
+
 func main() {
 	gStartTime = time.Now()
 	flag.Parse()
@@ -191,7 +197,7 @@ func main() {
 	// for each directory
 	for _, dir := range gCfg.Dirs {
 
-		dirInfoPrev = GetLastSnapshot(GetHash(dir.Path), 0)
+		dirInfoPrev = GetLastSnapshot(dir.Path, 0)
 
 		start := time.Now()
 		dirInfo, err := ProcessDirectory(dir.Path)
@@ -203,10 +209,12 @@ func main() {
 		SaveDirInfo(dir.Path, dirInfo)
 
 		deltaSize := ""
-		if dirInfo.Size >= dirInfoPrev.Size {
-			deltaSize = " (+" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
-		} else {
-			deltaSize = " (" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
+		if dirInfoPrev.Size != 0 {
+			if dirInfo.Size >= dirInfoPrev.Size {
+				deltaSize = " (+" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
+			} else {
+				deltaSize = " (" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
+			}
 		}
 
 		tableWriter.AppendRow([]interface{}{
@@ -220,14 +228,16 @@ func main() {
 	}
 
 	tableWriter.AppendSeparator()
-	tableWriter.AppendRow(table.Row{"start time", gStartTime.Format(time.RFC822)})
-	tableWriter.AppendRow(table.Row{"prev stime", dirInfoPrev.StartTime.Format(time.RFC822)})
+	tableWriter.AppendRow(table.Row{ColorHeader("start time"), gStartTime.Format(time.RFC822)})
+	if !dirInfoPrev.StartTime.IsZero() {
+		tableWriter.AppendRow(table.Row{ColorHeader("prev stime"), dirInfoPrev.StartTime.Format(time.RFC822)})
+	}
 	tableWriter.AppendSeparator()
 
 	// calculate free space
 	var space, _ = GetFreeSpace()
 
-	tableWriter.AppendRow(table.Row{"FREE SPACE", HumanSize(space), "", "", "", time.Since(mainStart).Round(time.Millisecond)})
+	tableWriter.AppendRow(table.Row{"FREE SPACE", color.HiGreenString(HumanSize(space)), "", "", "", time.Since(mainStart).Round(time.Millisecond)})
 	tableWriter.Render()
 
 	if *gDaemonMode {

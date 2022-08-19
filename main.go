@@ -20,13 +20,13 @@ import (
 )
 
 var (
-	startTime time.Time
-	logger    log.Logger
-	cfg       Config
+	gStartTime time.Time
+	gLogger    log.Logger
+	gCfg       Config
 
 	// command line arguments
-	replast    = flag.Bool("replast", false, "Repeat last output (no scan)")
-	daemonMode = flag.Bool("daemon", false, "Run in background")
+	gReplast    = flag.Bool("replast", false, "Repeat last output (no scan)")
+	gDaemonMode = flag.Bool("daemon", false, "Run in background")
 )
 
 const dataDir = "./data"
@@ -38,16 +38,15 @@ type Config struct {
 
 type Config_DirectorySettings struct {
 	Path string `yaml:"path"`
-	Rule string `yaml:"rule"`
 }
 
 type DirInfoStruct struct {
-	Path     string    `json:"path"`
-	Size     int64     `json:"size"`
-	Files    int       `json:"files"`
-	Dirs     int       `json:"dirs"`
-	ModTime  time.Time `json:"mtime"` // time of the latest modified file in the directory
-	walkTime int
+	Path      string    `json:"path"`
+	Size      int64     `json:"size"`
+	Files     int       `json:"files"`
+	Dirs      int       `json:"dirs"`
+	ModTime   time.Time `json:"mtime"` // the time of the latest modified file in the directory
+	StartTime time.Time `json:"stime"` // the time when the scan was started
 }
 
 func GetHash(text string) string {
@@ -78,7 +77,7 @@ func GetLastSnapshot(dirHash string, stepsBack int) DirInfoStruct {
 func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 	pathHash := GetHash(path)
 	os.Mkdir(dataDir, 0777)
-	snapshotName := fmt.Sprintf(dataDir+"/snapshot-%s-%s.dat", startTime.Format("2006-01-02 15:04:05"), pathHash)
+	snapshotName := fmt.Sprintf(dataDir+"/snapshot-%s-%s.dat", gStartTime.Format("2006-01-02 15:04:05"), pathHash)
 	snapshotFile, err := os.OpenFile("./"+snapshotName, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		fmt.Printf("error opening file: %v", err)
@@ -89,13 +88,13 @@ func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 }
 
 func ProcessDirectory(path string) (DirInfoStruct, error) {
-
 	var info = DirInfoStruct{
-		Path: path,
+		Path:      path,
+		StartTime: gStartTime,
 	}
 	err := filepath.Walk(path, func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil {
-			logger.Println(err)
+			gLogger.Println(err)
 			//return err // return error if you want to break walking
 		} else {
 			modTime := fileInfo.ModTime()
@@ -157,8 +156,8 @@ func InitLogger() {
 		fmt.Printf("error opening file: %v", err)
 		os.Exit(1)
 	}
-	logger = *log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
-	logger.SetOutput(&lumberjack.Logger{
+	gLogger = *log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
+	gLogger.SetOutput(&lumberjack.Logger{
 		Filename:   "./space-monitor.log",
 		MaxSize:    1, // megabytes after which new file is created
 		MaxBackups: 1, // number of backups
@@ -167,7 +166,7 @@ func InitLogger() {
 }
 
 func LoadConfig() {
-	err := cleanenv.ReadConfig("config.yaml", &cfg)
+	err := cleanenv.ReadConfig("config.yaml", &gCfg)
 	if err != nil {
 		color.HiRed(err.Error())
 		return
@@ -175,22 +174,24 @@ func LoadConfig() {
 }
 
 func main() {
-	startTime = time.Now()
+	gStartTime = time.Now()
 	flag.Parse()
 
 	mainStart := time.Now()
 	InitLogger()
 	LoadConfig()
 
-	t := table.NewWriter()
-	t.SetStyle(table.StyleRounded)
-	t.SetOutputMirror(os.Stdout)
-	t.AppendHeader(table.Row{"path", "Size", "Dirs", "Files", "modified", "walk time"})
+	tableWriter := table.NewWriter()
+	tableWriter.SetStyle(table.StyleRounded)
+	tableWriter.SetOutputMirror(os.Stdout)
+	tableWriter.AppendHeader(table.Row{"path", "Size", "Dirs", "Files", "last modified", "walk time"})
+
+	var dirInfoPrev DirInfoStruct
 
 	// for each directory
-	for _, dir := range cfg.Dirs {
+	for _, dir := range gCfg.Dirs {
 
-		dirInfoPrev := GetLastSnapshot(GetHash(dir.Path), 0)
+		dirInfoPrev = GetLastSnapshot(GetHash(dir.Path), 0)
 
 		start := time.Now()
 		dirInfo, err := ProcessDirectory(dir.Path)
@@ -208,7 +209,7 @@ func main() {
 			deltaSize = " (" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
 		}
 
-		t.AppendRow([]interface{}{
+		tableWriter.AppendRow([]interface{}{
 			dir.Path,
 			HumanSize(dirInfo.Size) + deltaSize,
 			dirInfo.Dirs,
@@ -218,16 +219,18 @@ func main() {
 		})
 	}
 
+	tableWriter.AppendSeparator()
+	tableWriter.AppendRow(table.Row{"start time", gStartTime.Format(time.RFC822)})
+	tableWriter.AppendRow(table.Row{"prev stime", dirInfoPrev.StartTime.Format(time.RFC822)})
+	tableWriter.AppendSeparator()
+
 	// calculate free space
 	var space, _ = GetFreeSpace()
 
-	t.AppendSeparator()
-	t.AppendFooter(table.Row{"free space", HumanSize(space)})
-	t.Render()
+	tableWriter.AppendRow(table.Row{"FREE SPACE", HumanSize(space), "", "", "", time.Since(mainStart).Round(time.Millisecond)})
+	tableWriter.Render()
 
-	fmt.Println("total time", time.Since(mainStart).Round(time.Millisecond))
-
-	if *daemonMode {
+	if *gDaemonMode {
 		fmt.Println("Running in daemon mode..")
 		for {
 

@@ -1,3 +1,4 @@
 .idea
 /space-monitor
 /*.log
+/config.yaml

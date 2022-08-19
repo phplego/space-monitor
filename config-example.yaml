@@ -1,0 +1,5 @@
+dirs:
+  - path: /etc
+  - path: /var
+  - path: /home/user/.config
+

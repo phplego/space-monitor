@@ -183,7 +183,6 @@ func main() {
 	gStartTime = time.Now()
 	flag.Parse()
 
-	mainStart := time.Now()
 	InitLogger()
 	LoadConfig()
 
@@ -246,7 +245,7 @@ func main() {
 	// calculate free space
 	var space, _ = GetFreeSpace()
 
-	tableWriter.AppendRow(table.Row{"FREE SPACE", color.HiGreenString(HumanSize(space)), "", "", "", time.Since(mainStart).Round(time.Millisecond)})
+	tableWriter.AppendRow(table.Row{"FREE SPACE", color.HiGreenString(HumanSize(space)), "", "", "", time.Since(gStartTime).Round(time.Millisecond)})
 	tableWriter.Render()
 
 	if *gDaemonMode {

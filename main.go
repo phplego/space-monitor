@@ -50,6 +50,18 @@ type DirInfoStruct struct {
 	StartTime time.Time `yaml:"stime"` // the time when the scan was started
 }
 
+func ColorHeader(str string, a ...interface{}) string {
+	return color.New(color.FgBlue).Add(color.Bold).Sprintf(str, a...)
+}
+
+func ColorHeaderHi(str string, a ...interface{}) string {
+	return color.New(color.FgHiBlue).Add(color.Bold).Sprintf(str, a...)
+}
+
+func ColorPale(str string, a ...interface{}) string {
+	return color.New(color.FgHiBlack).Add(color.Bold).Sprintf(str, a...)
+}
+
 func InitLogger() {
 	var logFilename = GetAppDir() + "/space-monitor.log"
 	file, err := os.OpenFile(logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
@@ -86,7 +98,7 @@ func GetHash(text string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func GetLastSnapshot(dir string, stepsBack int) DirInfoStruct {
+func LoadPrevDirInfo(dir string, stepsBack int) DirInfoStruct {
 	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/snapshot-*-%s.dat", GetHash(dir)))
 	if files == nil {
 		fmt.Printf("no snapshot files for %s\n", color.BlueString(dir))
@@ -182,12 +194,6 @@ func GetFreeSpace() (int64, error) {
 	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
-func ColorHeader(str string) string {
-	my := color.New(color.FgHiBlue)
-	my.Add(color.Bold)
-	return my.Sprint(str)
-}
-
 func main() {
 	gStartTime = time.Now()
 	flag.Parse()
@@ -200,11 +206,11 @@ func main() {
 	tableWriter.SetOutputMirror(os.Stdout)
 	tableWriter.AppendHeader(table.Row{"path", "Size", "Dirs", "Files", "last modified", "walk time"})
 
-	var dirInfoPrev DirInfoStruct
+	var prevDirInfo DirInfoStruct
 
 	// for each directory
 	for _, dir := range gCfg.Dirs {
-		dirInfoPrev = GetLastSnapshot(dir.Path, 0)
+		prevDirInfo = LoadPrevDirInfo(dir.Path, 0)
 
 		start := time.Now()
 		dirInfo, err := ProcessDirectory(dir.Path)
@@ -216,22 +222,22 @@ func main() {
 		SaveDirInfo(dir.Path, dirInfo)
 
 		deltaSize := ""
-		if dirInfoPrev.Size != 0 && dirInfoPrev.Size != dirInfo.Size {
-			if dirInfo.Size >= dirInfoPrev.Size {
-				deltaSize = " (+" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
+		if prevDirInfo.Size != 0 && prevDirInfo.Size != dirInfo.Size {
+			if dirInfo.Size >= prevDirInfo.Size {
+				deltaSize = " (+" + HumanSize(dirInfo.Size-prevDirInfo.Size) + ")"
 			} else {
-				deltaSize = " (" + HumanSize(dirInfo.Size-dirInfoPrev.Size) + ")"
+				deltaSize = " (" + HumanSize(dirInfo.Size-prevDirInfo.Size) + ")"
 			}
 		}
 
 		deltaDirs := ""
-		if dirInfoPrev.Dirs != 0 && dirInfoPrev.Dirs != dirInfo.Dirs {
-			deltaDirs = " (" + fmt.Sprintf("%+d", dirInfo.Dirs-dirInfoPrev.Dirs) + ")"
+		if prevDirInfo.Dirs != 0 && prevDirInfo.Dirs != dirInfo.Dirs {
+			deltaDirs = " (" + fmt.Sprintf("%+d", dirInfo.Dirs-prevDirInfo.Dirs) + ")"
 		}
 
 		deltaFiles := ""
-		if dirInfoPrev.Files != 0 && dirInfoPrev.Files != dirInfo.Files {
-			deltaFiles = " (" + fmt.Sprintf("%+d", dirInfo.Files-dirInfoPrev.Files) + ")"
+		if prevDirInfo.Files != 0 && prevDirInfo.Files != dirInfo.Files {
+			deltaFiles = " (" + fmt.Sprintf("%+d", dirInfo.Files-prevDirInfo.Files) + ")"
 		}
 
 		tableWriter.AppendRow([]interface{}{
@@ -245,10 +251,10 @@ func main() {
 	}
 
 	tableWriter.AppendSeparator()
-	if !dirInfoPrev.StartTime.IsZero() {
-		tableWriter.AppendRow(table.Row{ColorHeader("prev stime"), dirInfoPrev.StartTime.Format(time.RFC822)})
+	if !prevDirInfo.StartTime.IsZero() {
+		tableWriter.AppendRow(table.Row{ColorHeader("prev stime"), ColorPale(prevDirInfo.StartTime.Format(time.RFC822))})
 	}
-	tableWriter.AppendRow(table.Row{ColorHeader("start time"), gStartTime.Format(time.RFC822)})
+	tableWriter.AppendRow(table.Row{ColorHeaderHi("start time"), gStartTime.Format(time.RFC822)})
 	tableWriter.AppendSeparator()
 
 	// calculate free space

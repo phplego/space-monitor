@@ -141,8 +141,6 @@ func ProcessDirectory(path string) (DirInfoStruct, error) {
 				info.Files++
 				info.Size += fileInfo.Size()
 			}
-
-			//fmt.Println( /*GetHash*/ (path), fileInfo.IsDir(), fileInfo.Size())
 		}
 		return nil
 	})
@@ -247,10 +245,10 @@ func main() {
 	}
 
 	tableWriter.AppendSeparator()
-	tableWriter.AppendRow(table.Row{ColorHeader("start time"), gStartTime.Format(time.RFC822)})
 	if !dirInfoPrev.StartTime.IsZero() {
 		tableWriter.AppendRow(table.Row{ColorHeader("prev stime"), dirInfoPrev.StartTime.Format(time.RFC822)})
 	}
+	tableWriter.AppendRow(table.Row{ColorHeader("start time"), gStartTime.Format(time.RFC822)})
 	tableWriter.AppendSeparator()
 
 	// calculate free space

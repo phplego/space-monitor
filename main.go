@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/fatih/color"
@@ -11,6 +10,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"golang.org/x/sys/unix"
 	"gopkg.in/natefinch/lumberjack.v2"
+	"gopkg.in/yaml.v2"
 	"log"
 	"os"
 	"path/filepath"
@@ -27,9 +27,10 @@ var (
 	// command line arguments
 	gReplast    = flag.Bool("replast", false, "Repeat last output (no scan)")
 	gDaemonMode = flag.Bool("daemon", false, "Run in background")
-)
 
-const dataDir = "./data"
+	// paths and files
+	gDataDir = GetAppDir() + "/data"
+)
 
 // Config is an application configuration structure
 type Config struct {
@@ -41,23 +42,24 @@ type Config_DirectorySettings struct {
 }
 
 type DirInfoStruct struct {
-	Path      string    `json:"path"`
-	Size      int64     `json:"size"`
-	Files     int       `json:"files"`
-	Dirs      int       `json:"dirs"`
-	ModTime   time.Time `json:"mtime"` // the time of the latest modified file in the directory
-	StartTime time.Time `json:"stime"` // the time when the scan was started
+	Path      string    `yaml:"path"`
+	Size      int64     `yaml:"size"`
+	Files     int       `yaml:"files"`
+	Dirs      int       `yaml:"dirs"`
+	ModTime   time.Time `yaml:"mtime"` // the time of the latest modified file in the directory
+	StartTime time.Time `yaml:"stime"` // the time when the scan was started
 }
 
 func InitLogger() {
-	file, err := os.OpenFile("./space-monitor.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	var logFilename = GetAppDir() + "/space-monitor.log"
+	file, err := os.OpenFile(logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		fmt.Printf("error opening file: %v", err)
 		os.Exit(1)
 	}
 	gLogger = *log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
 	gLogger.SetOutput(&lumberjack.Logger{
-		Filename:   "./space-monitor.log",
+		Filename:   logFilename,
 		MaxSize:    1, // megabytes after which new file is created
 		MaxBackups: 1, // number of backups
 		//MaxAge:     28, //days
@@ -65,11 +67,16 @@ func InitLogger() {
 }
 
 func InitConfig() {
-	err := cleanenv.ReadConfig("config.yaml", &gCfg)
+	err := cleanenv.ReadConfig(GetAppDir()+"/config.yaml", &gCfg)
 	if err != nil {
 		color.HiRed(err.Error())
 		return
 	}
+}
+
+func GetAppDir() string {
+	path, _ := os.Executable()
+	return filepath.Dir(path)
 }
 
 func GetHash(text string) string {
@@ -80,7 +87,7 @@ func GetHash(text string) string {
 }
 
 func GetLastSnapshot(dir string, stepsBack int) DirInfoStruct {
-	files, _ := filepath.Glob(dataDir + fmt.Sprintf("/snapshot-*-%s.dat", GetHash(dir)))
+	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/snapshot-*-%s.dat", GetHash(dir)))
 	if files == nil {
 		fmt.Printf("no snapshot files for %s\n", color.BlueString(dir))
 		return DirInfoStruct{}
@@ -93,20 +100,24 @@ func GetLastSnapshot(dir string, stepsBack int) DirInfoStruct {
 	last := files[index]
 	bytes, _ := os.ReadFile(last)
 	info := DirInfoStruct{}
-	json.Unmarshal(bytes, &info)
+	err := yaml.Unmarshal(bytes, &info)
+	if err != nil {
+		color.HiRed(err.Error())
+		return DirInfoStruct{}
+	}
 	return info
 }
 
 func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 	pathHash := GetHash(path)
-	os.Mkdir(dataDir, 0777)
-	snapshotName := fmt.Sprintf(dataDir+"/snapshot-%s-%s.dat", gStartTime.Format("2006-01-02 15:04:05"), pathHash)
-	snapshotFile, err := os.OpenFile("./"+snapshotName, os.O_WRONLY|os.O_CREATE, 0666)
+	os.Mkdir(gDataDir, 0777)
+	snapshotFilePath := fmt.Sprintf(gDataDir+"/snapshot-%s-%s.dat", gStartTime.Format("2006-01-02 15:04:05"), pathHash)
+	snapshotFile, err := os.OpenFile(snapshotFilePath, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		fmt.Printf("error opening file: %v", err)
 		os.Exit(1)
 	}
-	bytes, _ := json.Marshal(dirInfo)
+	bytes, _ := yaml.Marshal(dirInfo)
 	snapshotFile.WriteString(string(bytes))
 }
 

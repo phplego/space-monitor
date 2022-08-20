@@ -49,6 +49,29 @@ type DirInfoStruct struct {
 	StartTime time.Time `json:"stime"` // the time when the scan was started
 }
 
+func InitLogger() {
+	file, err := os.OpenFile("./space-monitor.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Printf("error opening file: %v", err)
+		os.Exit(1)
+	}
+	gLogger = *log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
+	gLogger.SetOutput(&lumberjack.Logger{
+		Filename:   "./space-monitor.log",
+		MaxSize:    1, // megabytes after which new file is created
+		MaxBackups: 1, // number of backups
+		//MaxAge:     28, //days
+	})
+}
+
+func InitConfig() {
+	err := cleanenv.ReadConfig("config.yaml", &gCfg)
+	if err != nil {
+		color.HiRed(err.Error())
+		return
+	}
+}
+
 func GetHash(text string) string {
 	//h := xxh3.HashString128(text)
 	//return fmt.Sprintf("%x%x", h.Hi, h.Lo)
@@ -150,29 +173,6 @@ func GetFreeSpace() (int64, error) {
 	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
-func InitLogger() {
-	file, err := os.OpenFile("./space-monitor.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		fmt.Printf("error opening file: %v", err)
-		os.Exit(1)
-	}
-	gLogger = *log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
-	gLogger.SetOutput(&lumberjack.Logger{
-		Filename:   "./space-monitor.log",
-		MaxSize:    1, // megabytes after which new file is created
-		MaxBackups: 1, // number of backups
-		//MaxAge:     28, //days
-	})
-}
-
-func LoadConfig() {
-	err := cleanenv.ReadConfig("config.yaml", &gCfg)
-	if err != nil {
-		color.HiRed(err.Error())
-		return
-	}
-}
-
 func ColorHeader(str string) string {
 	my := color.New(color.FgHiBlue)
 	my.Add(color.Bold)
@@ -184,7 +184,7 @@ func main() {
 	flag.Parse()
 
 	InitLogger()
-	LoadConfig()
+	InitConfig()
 
 	tableWriter := table.NewWriter()
 	tableWriter.SetStyle(table.StyleRounded)

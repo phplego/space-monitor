@@ -13,21 +13,48 @@ type MyFileInfo struct {
 	ModTime time.Time
 }
 
-func main() {
-	aPath := "/etc"
+// Max returns the larger of x or y.
+func Max(x, y int) int {
+	if x < y {
+		return y
+	}
+	return x
+}
 
-	lastFiles := []MyFileInfo{}
+// Min returns the smaller of x or y.
+func Min(x, y int) int {
+	if x > y {
+		return y
+	}
+	return x
+}
 
+func GetLastFiles(aPath string, count int) ([]MyFileInfo, int) {
+	var result []MyFileInfo
+	var total = 0
 	err := filepath.Walk(aPath, func(path string, fileInfo os.FileInfo, err error) error {
+		total++
 		if err != nil {
 			fmt.Println(err)
-			//return err // return error if you want to break walking
 		} else {
-			lastFiles = append(lastFiles, MyFileInfo{
+
+			if len(result) == count {
+				// skip older files
+				if fileInfo.ModTime().Before(result[0].ModTime) {
+					return nil
+				}
+			}
+			result = append(result, MyFileInfo{
 				Path:    path,
 				ModTime: fileInfo.ModTime(),
 			})
 
+			// sort by mod time (older first)
+			sort.Slice(result, func(i, j int) bool {
+				return result[i].ModTime.Before(result[j].ModTime)
+			})
+			start := Max(0, len(result)-count)
+			result = result[start:]
 		}
 		return nil
 	})
@@ -35,13 +62,14 @@ func main() {
 		fmt.Println(err)
 	}
 
-	sort.Slice(lastFiles, func(i, j int) bool {
-		return lastFiles[i].ModTime.Before(lastFiles[j].ModTime)
-	})
+	return result, total
+}
 
-	for _, info := range lastFiles {
-		fmt.Println(info.ModTime, info.Path)
+func main() {
+	aPath := "/home"
+	lastFiles, total := GetLastFiles(aPath, 50)
+	for i, info := range lastFiles {
+		fmt.Printf("%02d| %v %s\n", i, info.ModTime, info.Path)
 	}
-
-	//fmt.Println(lastFiles)
+	fmt.Printf("TOTAL: %02d\n", total)
 }

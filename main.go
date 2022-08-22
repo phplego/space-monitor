@@ -133,7 +133,7 @@ func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 func LoadPrevDirInfo(dir string, stepsBack int) DirInfoStruct {
 	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/*/dirinfo-%s.dat", GetHash(dir)))
 	if files == nil {
-		LogErr("no dirinfo files for %s\n", color.BlueString(dir))
+		fmt.Println("no dirinfo files for %s", color.BlueString(dir))
 		return DirInfoStruct{}
 	}
 	sort.Strings(files)

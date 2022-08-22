@@ -3,3 +3,4 @@ dirs:
   - path: /var
   - path: /home/user/.config
 
+# max-snapshots: 20 # number of snapshots in the data directory (20 by default)

@@ -8,6 +8,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/jedib0t/go-pretty/v6/table"
+	"github.com/xeonx/timeago"
 	"golang.org/x/sys/unix"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"gopkg.in/yaml.v2"
@@ -67,7 +68,30 @@ func ColorHeaderHi(str string, a ...interface{}) string {
 }
 
 func ColorPale(str string, a ...interface{}) string {
-	return color.New(color.FgHiBlack).Add(color.Bold).Sprintf(str, a...)
+	return color.New(color.FgHiYellow). /*.Add(color.Bold)*/ Sprintf(str, a...)
+}
+
+func Bold(str string, a ...interface{}) string {
+	return color.New(color.Bold).Sprintf(str, a...)
+}
+
+func TimeAgo(t time.Time) string {
+	var myConfig = timeago.Config{
+		PastSuffix:   " ago",
+		FuturePrefix: "in ",
+		Periods: []timeago.FormatPeriod{
+			{time.Second, "a sec", "%d sec"},
+			{time.Minute, "a min", "%d min"},
+			{time.Hour, "an hour", "%d hrs"},
+			{timeago.Day, "one day", "%d days"},
+			{timeago.Month, "one mon", "%d mons"},
+			{timeago.Year, "one year", "%d yrs"},
+		},
+		Zero:          "just now",
+		Max:           99 * timeago.Year,
+		DefaultLayout: "2006-01-02",
+	}
+	return myConfig.Format(t)
 }
 
 func LogErr(v ...any) {
@@ -327,9 +351,13 @@ func main() {
 
 	tableWriter.AppendSeparator()
 	if !prevDirInfo.StartTime.IsZero() {
-		tableWriter.AppendRow(table.Row{ColorHeader("prev stime"), ColorPale(prevDirInfo.StartTime.Format(time.RFC822))})
+		tableWriter.AppendRow(table.Row{
+			ColorHeader("prev stime"),
+			ColorPale(prevDirInfo.StartTime.Format("02 Jan 15:04")),
+			ColorPale(TimeAgo(prevDirInfo.StartTime)),
+		})
 	}
-	tableWriter.AppendRow(table.Row{ColorHeaderHi("start time"), gStartTime.Format(time.RFC822)})
+	tableWriter.AppendRow(table.Row{ColorHeaderHi("start time"), gStartTime.Format("02 Jan 15:04"), "~ now"})
 	tableWriter.AppendSeparator()
 
 	prevSnapshot := LoadPrevSnapshot(0)

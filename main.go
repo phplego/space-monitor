@@ -308,6 +308,28 @@ func DeleteOldSnapshots() {
 	}
 }
 
+func GetPrevStartTime() (time.Time, error) {
+	files, _ := os.ReadDir(gDataDir)
+	var dirs []fs.DirEntry
+	for _, file := range files {
+		if file.IsDir() {
+			dirs = append(dirs, file)
+		}
+	}
+	if len(dirs) < 2 {
+		return time.Time{}, errors.New("cannot get prev start time: no previous directories")
+	}
+	sort.Slice(dirs, func(i, j int) bool { // sort dirs (older first)
+		return strings.Compare(dirs[i].Name(), dirs[j].Name()) < 0
+	})
+	lastStartTime, err := time.Parse("2006-01-02 15:04:05", dirs[len(dirs)-1].Name())
+	if err != nil {
+		LogErr(err)
+		return time.Time{}, err
+	}
+	return lastStartTime, nil
+}
+
 func main() {
 	gStartTime = time.Now()
 	flag.Parse()
@@ -366,10 +388,11 @@ func main() {
 	}
 
 	tableWriter.AppendSeparator()
-	if !prevDirInfo.StartTime.IsZero() {
+	prevStartTime, err := GetPrevStartTime()
+	if err == nil {
 		tableWriter.AppendRow(table.Row{
 			ColorHeader("prev stime"),
-			ColorPale(prevDirInfo.StartTime.Format("02 Jan 15:04")),
+			ColorPale(prevStartTime.Format("02 Jan 15:04")),
 			ColorPale(TimeAgo(prevDirInfo.StartTime)),
 		})
 	}

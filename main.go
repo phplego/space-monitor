@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/fatih/color"
@@ -13,7 +14,6 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 	"gopkg.in/yaml.v2"
 	"io/fs"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -96,7 +96,7 @@ func TimeAgo(t time.Time) string {
 
 func LogErr(v ...any) {
 	gLogger.Println(v...)
-	fmt.Println(v...)
+	color.New(color.FgHiRed, color.Italic).Println(v...)
 }
 
 func InitLogger() {
@@ -120,14 +120,19 @@ func InitConfig() {
 	gCfg.MaxSnapshots = 20
 	err := cleanenv.ReadConfig(GetAppDir()+"/config.yaml", &gCfg)
 	if err != nil {
-		color.HiRed(err.Error())
-		return
+		LogErr(err)
 	}
 }
 
 func InitDataDirs() {
-	os.Mkdir(gDataDir, 0777)
-	os.Mkdir(gDataDir+"/"+gStartTime.Format("2006-01-02 15:04:05"), 0777)
+	err := os.Mkdir(gDataDir, 0777)
+	if err != nil && !errors.Is(err, os.ErrExist) {
+		LogErr(err)
+	}
+	err = os.Mkdir(gDataDir+"/"+gStartTime.Format("2006-01-02 15:04:05"), 0777)
+	if err != nil && !errors.Is(err, os.ErrExist) {
+		LogErr(err)
+	}
 }
 
 func GetAppDir() string {
@@ -147,17 +152,20 @@ func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 	dirInfoFilePath := fmt.Sprintf(gDataDir+"/%s/dirinfo-%s.dat", gStartTime.Format("2006-01-02 15:04:05"), pathHash)
 	dirInfoFile, err := os.OpenFile(dirInfoFilePath, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		LogErr("error opening file: %v", err)
+		LogErr(err)
 		os.Exit(1)
 	}
 	bytes, _ := yaml.Marshal(dirInfo)
-	dirInfoFile.WriteString(string(bytes))
+	_, err = dirInfoFile.WriteString(string(bytes))
+	if err != nil {
+		LogErr(err)
+	}
 }
 
 func LoadPrevDirInfo(dir string, stepsBack int) DirInfoStruct {
 	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/*/dirinfo-%s.dat", GetHash(dir)))
 	if files == nil {
-		fmt.Printf("no dirinfo files for %s\n", color.BlueString(dir))
+		fmt.Println("no dirinfo files for", color.BlueString(dir), "is it first run?")
 		return DirInfoStruct{}
 	}
 	sort.Strings(files)
@@ -170,7 +178,7 @@ func LoadPrevDirInfo(dir string, stepsBack int) DirInfoStruct {
 	info := DirInfoStruct{}
 	err := yaml.Unmarshal(bytes, &info)
 	if err != nil {
-		LogErr(err.Error())
+		LogErr(err)
 	}
 	return info
 }
@@ -228,7 +236,7 @@ func GetFreeSpace() (int64, error) {
 
 	err = unix.Statfs(wd, &stat)
 	if err != nil {
-		LogErr(err.Error())
+		LogErr(err)
 		return 0, err
 	}
 
@@ -244,33 +252,41 @@ func SaveSnapshot(snapshot SnapshotStruct) {
 		os.Exit(1)
 	}
 	bytes, _ := yaml.Marshal(snapshot)
-	snapshotFile.WriteString(string(bytes))
+	_, err = snapshotFile.WriteString(string(bytes))
+	if err != nil {
+		LogErr(err)
+	}
 }
 
 func LoadPrevSnapshot(stepsBack int) SnapshotStruct {
-	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/*/snapshot.dat"))
+	files, err := filepath.Glob(gDataDir + fmt.Sprintf("/*/snapshot.dat"))
+	if err != nil {
+		LogErr(err)
+		os.Exit(1)
+	}
 	if files == nil {
-		LogErr("no snapshot files")
+		fmt.Println("no snapshot files; is it first run?")
 		return SnapshotStruct{}
 	}
 	sort.Strings(files)
 	index := len(files) - 1 - stepsBack
 	if index < 0 || index >= len(files) {
 		LogErr("Error: out of bounds snapshot array. index=" + strconv.Itoa(index))
+		return SnapshotStruct{}
 	}
 	last := files[index]
 	bytes, _ := os.ReadFile(last)
 	snap := SnapshotStruct{}
-	err := yaml.Unmarshal(bytes, &snap)
+	err = yaml.Unmarshal(bytes, &snap)
 	if err != nil {
-		color.HiRed(err.Error())
+		LogErr(err)
 	}
 	return snap
 }
 
 func DeleteOldSnapshots() {
-	files, _ := ioutil.ReadDir(gDataDir)
-	var dirs []fs.FileInfo
+	files, _ := os.ReadDir(gDataDir)
+	var dirs []fs.DirEntry
 	for _, file := range files {
 		if file.IsDir() {
 			dirs = append(dirs, file)
@@ -286,7 +302,7 @@ func DeleteOldSnapshots() {
 	for _, dir := range dirs[0 : len(dirs)-gCfg.MaxSnapshots] {
 		err := os.RemoveAll(gDataDir + "/" + dir.Name())
 		if err != nil {
-			LogErr(err.Error())
+			LogErr(err)
 			return
 		}
 	}
@@ -314,7 +330,7 @@ func main() {
 		start := time.Now()
 		dirInfo, err := ProcessDirectory(dir.Path)
 		if err != nil {
-			LogErr(err.Error())
+			LogErr(err)
 			//continue
 		}
 

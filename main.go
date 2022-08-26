@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/gob"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -16,6 +17,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -40,6 +42,7 @@ var (
 type Config struct {
 	Dirs         []Config_DirectorySettings `yaml:"dirs"`
 	MaxSnapshots int                        `yaml:"max-snapshots"`
+	DetailedMode bool                       `yaml:"detailed-mode"`
 }
 
 type Config_DirectorySettings struct {
@@ -47,12 +50,17 @@ type Config_DirectorySettings struct {
 }
 
 type DirInfoStruct struct {
-	Path      string    `yaml:"path"`
-	Size      int64     `yaml:"size"`
-	Files     int       `yaml:"files"`
-	Dirs      int       `yaml:"dirs"`
-	ModTime   time.Time `yaml:"mtime"` // the time of the latest modified file in the directory
-	StartTime time.Time `yaml:"stime"` // the time when the scan was started
+	Path      string                 `yaml:"path"`
+	Size      int64                  `yaml:"size"`
+	Files     int                    `yaml:"files"`
+	Dirs      int                    `yaml:"dirs"`
+	ModTime   time.Time              `yaml:"mtime"` // the time of the latest modified file in the directory
+	StartTime time.Time              `yaml:"stime"` // the time when the scan was started
+	fileMap   map[string]GobFileInfo // for detailed mode
+}
+
+type GobFileInfo struct {
+	Size int64
 }
 
 type SnapshotStruct struct {
@@ -118,6 +126,9 @@ func InitLogger() {
 func InitConfig() {
 	// default config values
 	gCfg.MaxSnapshots = 20
+	gCfg.DetailedMode = false
+
+	// load file
 	err := cleanenv.ReadConfig(GetAppDir()+"/config.yaml", &gCfg)
 	if err != nil {
 		LogErr(err)
@@ -144,7 +155,7 @@ func GetHash(text string) string {
 	//h := xxh3.HashString128(text)
 	//return fmt.Sprintf("%x%x", h.Hi, h.Lo)
 	hash := sha1.Sum([]byte(text))
-	return hex.EncodeToString(hash[:])
+	return hex.EncodeToString(hash[0:10])
 }
 
 func SaveDirInfo(path string, dirInfo DirInfoStruct) {
@@ -155,6 +166,20 @@ func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 		LogErr(err)
 		os.Exit(1)
 	}
+
+	if gCfg.DetailedMode {
+		encodeFile, err := os.Create(strings.Replace(dirInfoFilePath, ".dat", ".gob", 1))
+		defer encodeFile.Close()
+		if err != nil {
+			LogErr(err)
+			return
+		}
+		encoder := gob.NewEncoder(encodeFile)
+		if err := encoder.Encode(dirInfo.fileMap); err != nil {
+			LogErr(err)
+		}
+	}
+
 	bytes, _ := yaml.Marshal(dirInfo)
 	_, err = dirInfoFile.WriteString(string(bytes))
 	if err != nil {
@@ -180,19 +205,50 @@ func LoadPrevDirInfo(dir string, stepsBack int) DirInfoStruct {
 	if err != nil {
 		LogErr(err)
 	}
+
+	if gCfg.DetailedMode {
+		decodeFile, err := os.Open(strings.Replace(last, ".dat", ".gob", 1))
+		if err != nil {
+			return info
+		}
+		defer decodeFile.Close()
+		decoder := gob.NewDecoder(decodeFile)
+		err = decoder.Decode(&info.fileMap)
+		if err != nil {
+			LogErr(err)
+		}
+	}
+
 	return info
 }
 
-func ProcessDirectory(path string) (DirInfoStruct, error) {
-	var info = DirInfoStruct{
-		Path:      path,
-		StartTime: gStartTime,
+func AbsPath(path string) string {
+	usr, _ := user.Current()
+
+	if path == "~" {
+		return usr.HomeDir
+	} else if strings.HasPrefix(path, "~/") {
+		return filepath.Join(usr.HomeDir, path[2:])
 	}
-	err := filepath.Walk(path, func(path string, fileInfo os.FileInfo, err error) error {
+	return path
+}
+
+func ProcessDirectory(dir string) (DirInfoStruct, error) {
+	dir = AbsPath(dir)
+	var info = DirInfoStruct{
+		Path:      dir,
+		StartTime: gStartTime,
+		fileMap:   map[string]GobFileInfo{},
+	}
+	err := filepath.Walk(dir, func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil {
 			gLogger.Println(err)
 			//return err // return error if you want to break walking
 		} else {
+			if gCfg.DetailedMode {
+				info.fileMap[path] = GobFileInfo{Size: fileInfo.Size()}
+			}
+
 			modTime := fileInfo.ModTime()
 			if modTime.After(info.ModTime) && modTime.Before(time.Now() /*skip Files from the future*/) {
 				info.ModTime = fileInfo.ModTime()
@@ -330,6 +386,30 @@ func GetPrevStartTime() (time.Time, error) {
 	return lastStartTime, nil
 }
 
+func DetailedPrintDiff(prevMap, currMap map[string]GobFileInfo) {
+	if len(prevMap) == 0 {
+		return
+	}
+	for key, val := range prevMap {
+		if _, ok := currMap[key]; !ok {
+			color.Red("- %s %s\n", key, HumanSize(val.Size)) // print deleted
+		} else {
+			if currMap[key].Size != prevMap[key].Size {
+				color.New(color.FgBlue).Println( // print changed
+					"✎ "+key,
+					HumanSize(currMap[key].Size),
+					"("+HumanSize(currMap[key].Size-val.Size)+")",
+				)
+			}
+		}
+	}
+	for key, val := range currMap {
+		if _, ok := prevMap[key]; !ok {
+			color.Green("+ %s %s\n", key, HumanSize(val.Size)) // print added
+		}
+	}
+}
+
 func main() {
 	gStartTime = time.Now()
 	flag.Parse()
@@ -351,12 +431,19 @@ func main() {
 
 		start := time.Now()
 		dirInfo, err := ProcessDirectory(dir.Path)
+		processTime := time.Since(start).Round(time.Millisecond)
 		if err != nil {
 			LogErr(err)
 			//continue
 		}
 
+		start = time.Now()
 		SaveDirInfo(dir.Path, dirInfo)
+		saveTime := time.Since(start).Round(time.Millisecond)
+
+		if gCfg.DetailedMode {
+			DetailedPrintDiff(prevDirInfo.fileMap, dirInfo.fileMap)
+		}
 
 		deltaSize := ""
 		if prevDirInfo.Size != 0 && prevDirInfo.Size != dirInfo.Size {
@@ -383,7 +470,7 @@ func main() {
 			strconv.Itoa(dirInfo.Dirs) + deltaDirs,
 			strconv.Itoa(dirInfo.Files) + deltaFiles,
 			dirInfo.ModTime.Format(time.RFC822),
-			time.Since(start).Round(time.Millisecond),
+			processTime.String() + " + " + saveTime.String(),
 		})
 	}
 

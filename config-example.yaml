@@ -3,4 +3,5 @@ dirs:
   - path: /var
   - path: /home/user/.config
 
-# max-snapshots: 20 # number of snapshots in the data directory (20 by default)
+# max-snapshots: 20     # number of snapshots in the data directory (20 by default)
+# detailed-mode: false  # experimental detailed mode (creates large directory structure files)

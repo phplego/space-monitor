@@ -308,7 +308,7 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 	var modList []string
 	var delList []string
 
-	for key, _ := range currMap {
+	for key := range currMap {
 		if _, ok := prevMap[key]; !ok {
 			addList = append(addList, key)
 		} else {
@@ -317,7 +317,7 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 			}
 		}
 	}
-	for key, _ := range prevMap {
+	for key := range prevMap {
 		if _, ok := currMap[key]; !ok {
 			delList = append(delList, key)
 		}
@@ -368,8 +368,6 @@ func main() {
 	tableWriter.SetStyle(table.StyleRounded)
 	tableWriter.SetOutputMirror(os.Stdout)
 	tableWriter.AppendHeader(table.Row{"path", "Size", "Dirs", "Files", "last modified", "walk time"})
-
-	//var prevDirInfo DirInfoStruct
 
 	// for each directory
 	for _, dir := range gCfg.Dirs {

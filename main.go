@@ -155,7 +155,7 @@ func GetHash(text string) string {
 	//h := xxh3.HashString128(text)
 	//return fmt.Sprintf("%x%x", h.Hi, h.Lo)
 	hash := sha1.Sum([]byte(text))
-	return hex.EncodeToString(hash[0:10])
+	return hex.EncodeToString(hash[0:10]) // first half of SHA1 (10 bytes)
 }
 
 func SaveDirInfo(path string, dirInfo DirInfoStruct) {
@@ -394,25 +394,45 @@ func GetPrevStartTime() (time.Time, error) {
 	return lastStartTime, nil
 }
 
-func PrintMapsDiff(prevMap, currMap map[string]GobFileInfo) {
+func PrintMapsDiff(prevDirInfo, currDirInfo DirInfoStruct) {
+	var prevMap = prevDirInfo.fileMap
+	var currMap = currDirInfo.fileMap
+	colorModifiedDirPart := color.New(color.BgBlue, color.FgWhite)
+	colorModified := color.New(color.FgHiBlue)
+	colorAdded := color.New(color.FgHiGreen)
+	colorAddedDirPart := color.New(color.BgGreen, color.FgWhite)
+	colorDeleted := color.New(color.FgHiRed)
+	colorDeletedDirPart := color.New(color.BgRed, color.FgWhite)
+	colorDelta := color.New(color.FgHiMagenta)
 	if len(prevMap) == 0 {
-		return
+		return // skip empty map (eg. when first run)
 	}
 	for key, val := range currMap {
+		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
 		if _, ok := prevMap[key]; !ok {
-			color.HiGreen("+ %s %s\n", key, HumanSize(val.Size)) // print added
+			colorAdded.Print("+ ")
+			colorAdded.Printf("%-10s", HumanSize(val.Size))
+			colorAddedDirPart.Print(AbsPath(currDirInfo.Path))
+			colorAdded.Print(relPath)
+			fmt.Println()
 		} else {
 			if currMap[key].Size != prevMap[key].Size {
-				blu := color.New(color.FgHiBlue)
-				blu.Print("≈ " + key)
-				fmt.Print(" " + HumanSize(currMap[key].Size))
-				color.HiMagenta(" (" + HumanSizeSign(val.Size-prevMap[key].Size) + ")")
+				colorModified.Print("≈ ")
+				colorModified.Printf("%-10s", HumanSize(val.Size))
+				colorModifiedDirPart.Print(AbsPath(currDirInfo.Path))
+				colorModified.Print(relPath)
+				colorDelta.Print(" (", HumanSizeSign(val.Size-prevMap[key].Size), ")\n")
 			}
 		}
 	}
 	for key, val := range prevMap {
+		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
 		if _, ok := currMap[key]; !ok {
-			color.HiRed("- %s %s\n", key, HumanSize(val.Size)) // print deleted
+			colorDeleted.Print("- ")
+			colorDeleted.Printf("%-10s", HumanSize(val.Size))
+			colorDeletedDirPart.Print(currDirInfo.Path)
+			colorDeleted.Print(relPath)
+			fmt.Println()
 		}
 	}
 }
@@ -449,7 +469,7 @@ func main() {
 		saveTime := time.Since(start).Round(time.Millisecond)
 
 		if gCfg.DetailedMode {
-			PrintMapsDiff(prevDirInfo.fileMap, currDirInfo.fileMap)
+			PrintMapsDiff(prevDirInfo, currDirInfo)
 		}
 
 		deltaSize := ""

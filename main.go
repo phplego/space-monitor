@@ -1,23 +1,18 @@
 package main
 
 import (
-	"crypto/sha1"
 	"encoding/gob"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/fatih/color"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/xeonx/timeago"
-	"golang.org/x/sys/unix"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"gopkg.in/yaml.v2"
 	"io/fs"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -67,41 +62,6 @@ type SnapshotStruct struct {
 	FreeSpace int64 `yaml:"free-space"`
 }
 
-func ColorHeader(str string, a ...interface{}) string {
-	return color.New(color.FgBlue).Add(color.Bold).Sprintf(str, a...)
-}
-
-func ColorHeaderHi(str string, a ...interface{}) string {
-	return color.New(color.FgHiBlue).Add(color.Bold).Sprintf(str, a...)
-}
-
-func ColorPale(str string, a ...interface{}) string {
-	return color.New(color.FgHiYellow). /*.Add(color.Bold)*/ Sprintf(str, a...)
-}
-
-func Bold(str string, a ...interface{}) string {
-	return color.New(color.Bold).Sprintf(str, a...)
-}
-
-func TimeAgo(t time.Time) string {
-	var myConfig = timeago.Config{
-		PastSuffix:   " ago",
-		FuturePrefix: "in ",
-		Periods: []timeago.FormatPeriod{
-			{time.Second, "a sec", "%d sec"},
-			{time.Minute, "a min", "%d min"},
-			{time.Hour, "an hour", "%d hrs"},
-			{timeago.Day, "one day", "%d days"},
-			{timeago.Month, "one mon", "%d mons"},
-			{timeago.Year, "one year", "%d yrs"},
-		},
-		Zero:          "just now",
-		Max:           99 * timeago.Year,
-		DefaultLayout: "2006-01-02",
-	}
-	return myConfig.Format(t)
-}
-
 func LogErr(v ...any) {
 	gLogger.Println(v...)
 	color.New(color.FgHiRed, color.Italic).Println(v...)
@@ -146,18 +106,6 @@ func InitDataDirs() {
 	}
 }
 
-func GetAppDir() string {
-	path, _ := os.Executable()
-	return filepath.Dir(path)
-}
-
-func GetHash(text string) string {
-	//h := xxh3.HashString128(text)
-	//return fmt.Sprintf("%x%x", h.Hi, h.Lo)
-	hash := sha1.Sum([]byte(text))
-	return hex.EncodeToString(hash[0:10]) // first half of SHA1 (10 bytes)
-}
-
 func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 	pathHash := GetHash(path)
 	dirInfoFilePath := fmt.Sprintf(gDataDir+"/%s/dirinfo-%s.dat", gStartTime.Format("2006-01-02 15:04:05"), pathHash)
@@ -187,16 +135,16 @@ func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 	}
 }
 
-func LoadPrevDirInfo(dir string, stepsBack int) DirInfoStruct {
+func LoadPrevDirInfo(dir string, stepsBack int) (DirInfoStruct, error) {
 	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/*/dirinfo-%s.dat", GetHash(dir)))
 	if files == nil {
 		fmt.Println("no dirinfo files for", color.BlueString(dir), "is it first run?")
-		return DirInfoStruct{}
+		return DirInfoStruct{}, errors.New("no prev dirinfo files")
 	}
 	sort.Strings(files)
 	index := len(files) - 1 - stepsBack
 	if index < 0 || index >= len(files) {
-		LogErr("Error: out of bounds dirinfo array. index=" + strconv.Itoa(index))
+		return DirInfoStruct{}, errors.New("Error: out of bounds dirinfo array. index=" + strconv.Itoa(index))
 	}
 	last := files[index]
 	bytes, _ := os.ReadFile(last)
@@ -209,28 +157,17 @@ func LoadPrevDirInfo(dir string, stepsBack int) DirInfoStruct {
 	if gCfg.DetailedMode {
 		decodeFile, err := os.Open(strings.Replace(last, ".dat", ".gob", 1))
 		if err != nil {
-			return info
+			return info, err
 		}
 		defer decodeFile.Close()
 		decoder := gob.NewDecoder(decodeFile)
 		err = decoder.Decode(&info.fileMap)
 		if err != nil {
-			LogErr(err)
+			return info, err
 		}
 	}
 
-	return info
-}
-
-func AbsPath(path string) string {
-	usr, _ := user.Current()
-
-	if path == "~" {
-		return usr.HomeDir
-	} else if strings.HasPrefix(path, "~/") {
-		return filepath.Join(usr.HomeDir, path[2:])
-	}
-	return path
+	return info, nil
 }
 
 func ProcessDirectory(dir string) (DirInfoStruct, error) {
@@ -264,48 +201,6 @@ func ProcessDirectory(dir string) (DirInfoStruct, error) {
 	})
 
 	return info, err
-}
-
-func HumanSize(bytes int64) string {
-	var abs = func(v int64) int64 {
-		if v < 0 {
-			return -v
-		}
-		return v
-	}
-
-	const unit = 1024
-	if abs(bytes) < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; abs(n) >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-func HumanSizeSign(bytes int64) string {
-	str := HumanSize(bytes)
-	if !strings.HasPrefix(str, "-") {
-		return "+" + str
-	}
-	return str
-}
-
-func GetFreeSpace() (int64, error) {
-	wd, err := os.Getwd()
-	var stat unix.Statfs_t
-
-	err = unix.Statfs(wd, &stat)
-	if err != nil {
-		LogErr(err)
-		return 0, err
-	}
-
-	// Available blocks * Size per block = available space in bytes
-	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
 func SaveSnapshot(snapshot SnapshotStruct) {
@@ -394,7 +289,7 @@ func GetPrevStartTime() (time.Time, error) {
 	return lastStartTime, nil
 }
 
-func PrintMapsDiff(prevDirInfo, currDirInfo DirInfoStruct) {
+func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 	var prevMap = prevDirInfo.fileMap
 	var currMap = currDirInfo.fileMap
 	colorModifiedDirPart := color.New(color.BgBlue, color.FgWhite)
@@ -450,12 +345,14 @@ func main() {
 	tableWriter.SetOutputMirror(os.Stdout)
 	tableWriter.AppendHeader(table.Row{"path", "Size", "Dirs", "Files", "last modified", "walk time"})
 
-	var prevDirInfo DirInfoStruct
+	//var prevDirInfo DirInfoStruct
 
 	// for each directory
 	for _, dir := range gCfg.Dirs {
-		prevDirInfo = LoadPrevDirInfo(dir.Path, 0)
+		// load previous state of the directory
+		prevDirInfo, loadErr := LoadPrevDirInfo(dir.Path, 0)
 
+		// calculate current state
 		start := time.Now()
 		currDirInfo, err := ProcessDirectory(dir.Path)
 		processTime := time.Since(start).Round(time.Millisecond)
@@ -464,26 +361,28 @@ func main() {
 			//continue
 		}
 
+		// save state
 		start = time.Now()
 		SaveDirInfo(dir.Path, currDirInfo)
 		saveTime := time.Since(start).Round(time.Millisecond)
 
+		// print diff
 		if gCfg.DetailedMode {
-			PrintMapsDiff(prevDirInfo, currDirInfo)
+			PrintDiff(prevDirInfo, currDirInfo)
 		}
 
 		deltaSize := ""
-		if prevDirInfo.Size != 0 && prevDirInfo.Size != currDirInfo.Size {
+		if loadErr == nil && prevDirInfo.Size != currDirInfo.Size {
 			deltaSize = " (" + HumanSizeSign(currDirInfo.Size-prevDirInfo.Size) + ")"
 		}
 
 		deltaDirs := ""
-		if prevDirInfo.Dirs != 0 && prevDirInfo.Dirs != currDirInfo.Dirs {
+		if loadErr == nil && prevDirInfo.Dirs != currDirInfo.Dirs {
 			deltaDirs = " (" + fmt.Sprintf("%+d", currDirInfo.Dirs-prevDirInfo.Dirs) + ")"
 		}
 
 		deltaFiles := ""
-		if prevDirInfo.Files != 0 && prevDirInfo.Files != currDirInfo.Files {
+		if loadErr == nil && prevDirInfo.Files != currDirInfo.Files {
 			deltaFiles = " (" + fmt.Sprintf("%+d", currDirInfo.Files-prevDirInfo.Files) + ")"
 		}
 
@@ -500,7 +399,7 @@ func main() {
 	tableWriter.AppendSeparator()
 	prevStartTime, err := GetPrevStartTime()
 	if err == nil {
-		tableWriter.AppendRow(table.Row{
+		tableWriter.AppendRow(table.Row{ // print previous start time
 			ColorHeader("prev stime"),
 			ColorPale(prevStartTime.Format("02 Jan 15:04")),
 			ColorPale(TimeAgo(prevStartTime)),

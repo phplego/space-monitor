@@ -386,7 +386,7 @@ func GetPrevStartTime() (time.Time, error) {
 	sort.Slice(dirs, func(i, j int) bool { // sort dirs (older first)
 		return strings.Compare(dirs[i].Name(), dirs[j].Name()) < 0
 	})
-	lastStartTime, err := time.Parse("2006-01-02 15:04:05", dirs[len(dirs)-1].Name())
+	lastStartTime, err := time.Parse("2006-01-02 15:04:05", dirs[len(dirs)-2].Name())
 	if err != nil {
 		LogErr(err)
 		return time.Time{}, err

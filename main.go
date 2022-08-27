@@ -294,6 +294,9 @@ func GetPrevStartTime() (time.Time, error) {
 func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 	var prevMap = prevDirInfo.fileMap
 	var currMap = currDirInfo.fileMap
+	if len(prevMap) == 0 {
+		return // skip empty map (eg. when first run)
+	}
 	colorModifiedDirPart := color.New(color.BgBlue, color.FgWhite)
 	colorModified := color.New(color.FgHiBlue)
 	colorAdded := color.New(color.FgHiGreen)
@@ -301,37 +304,56 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 	colorDeleted := color.New(color.FgHiRed)
 	colorDeletedDirPart := color.New(color.BgRed, color.FgWhite)
 	colorDelta := color.New(color.FgHiMagenta)
-	if len(prevMap) == 0 {
-		return // skip empty map (eg. when first run)
-	}
-	for key, val := range currMap {
-		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
+	var addList []string
+	var modList []string
+	var delList []string
+
+	for key, _ := range currMap {
 		if _, ok := prevMap[key]; !ok {
-			colorAdded.Print("+ ")
-			colorAdded.Printf("%-10s", HumanSize(val.Size))
-			colorAddedDirPart.Print(AbsPath(currDirInfo.Path))
-			colorAdded.Print(relPath)
-			fmt.Println()
+			addList = append(addList, key)
 		} else {
 			if currMap[key].Size != prevMap[key].Size {
-				colorModified.Print("≈ ")
-				colorModified.Printf("%-10s", HumanSize(val.Size))
-				colorModifiedDirPart.Print(AbsPath(currDirInfo.Path))
-				colorModified.Print(relPath)
-				colorDelta.Print(" (", HumanSizeSign(val.Size-prevMap[key].Size), ")\n")
+				modList = append(modList, key)
 			}
 		}
 	}
-	for key, val := range prevMap {
-		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
+	for key, _ := range prevMap {
 		if _, ok := currMap[key]; !ok {
-			colorDeleted.Print("- ")
-			colorDeleted.Printf("%-10s", HumanSize(val.Size))
-			colorDeletedDirPart.Print(currDirInfo.Path)
-			colorDeleted.Print(relPath)
-			fmt.Println()
+			delList = append(delList, key)
 		}
 	}
+
+	sort.Strings(addList)
+	sort.Strings(modList)
+	sort.Strings(delList)
+	for _, key := range addList {
+		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
+		val := currMap[key]
+		colorAdded.Print("+ ")
+		colorAdded.Printf("%-10s", HumanSize(val.Size))
+		colorAddedDirPart.Print(AbsPath(currDirInfo.Path))
+		colorAdded.Print(relPath)
+		fmt.Println()
+	}
+	for _, key := range modList {
+		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
+		val := currMap[key]
+		colorModified.Print("≈ ")
+		colorModified.Printf("%-10s", HumanSize(val.Size))
+		colorModifiedDirPart.Print(AbsPath(currDirInfo.Path))
+		colorModified.Print(relPath)
+		colorDelta.Print(" (", HumanSizeSign(val.Size-prevMap[key].Size), ")\n")
+	}
+	for _, key := range delList {
+		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
+		val := prevMap[key] // use prev map (!)
+		colorDeleted.Print("- ")
+		colorDeleted.Printf("%-10s", HumanSize(val.Size))
+		colorDeletedDirPart.Print(currDirInfo.Path)
+		colorDeleted.Print(relPath)
+		fmt.Println()
+	}
+
 }
 
 func main() {

@@ -386,7 +386,7 @@ func GetPrevStartTime() (time.Time, error) {
 	sort.Slice(dirs, func(i, j int) bool { // sort dirs (older first)
 		return strings.Compare(dirs[i].Name(), dirs[j].Name()) < 0
 	})
-	lastStartTime, err := time.Parse("2006-01-02 15:04:05", dirs[len(dirs)-2].Name())
+	lastStartTime, err := time.ParseInLocation("2006-01-02 15:04:05", dirs[len(dirs)-2].Name(), time.Local)
 	if err != nil {
 		LogErr(err)
 		return time.Time{}, err
@@ -483,7 +483,7 @@ func main() {
 		tableWriter.AppendRow(table.Row{
 			ColorHeader("prev stime"),
 			ColorPale(prevStartTime.Format("02 Jan 15:04")),
-			ColorPale(TimeAgo(prevDirInfo.StartTime)),
+			ColorPale(TimeAgo(prevStartTime)),
 		})
 	}
 	tableWriter.AppendRow(table.Row{ColorHeaderHi("start time"), gStartTime.Format("02 Jan 15:04"), "~ now"})

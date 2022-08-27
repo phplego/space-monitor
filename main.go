@@ -286,6 +286,14 @@ func HumanSize(bytes int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
+func HumanSizeSign(bytes int64) string {
+	str := HumanSize(bytes)
+	if !strings.HasPrefix(str, "-") {
+		return "+" + str
+	}
+	return str
+}
+
 func GetFreeSpace() (int64, error) {
 	wd, err := os.Getwd()
 	var stat unix.Statfs_t
@@ -386,26 +394,25 @@ func GetPrevStartTime() (time.Time, error) {
 	return lastStartTime, nil
 }
 
-func DetailedPrintDiff(prevMap, currMap map[string]GobFileInfo) {
+func PrintMapsDiff(prevMap, currMap map[string]GobFileInfo) {
 	if len(prevMap) == 0 {
 		return
 	}
-	for key, val := range prevMap {
-		if _, ok := currMap[key]; !ok {
-			color.Red("- %s %s\n", key, HumanSize(val.Size)) // print deleted
+	for key, val := range currMap {
+		if _, ok := prevMap[key]; !ok {
+			color.HiGreen("+ %s %s\n", key, HumanSize(val.Size)) // print added
 		} else {
 			if currMap[key].Size != prevMap[key].Size {
-				color.New(color.FgBlue).Println( // print changed
-					"✎ "+key,
-					HumanSize(currMap[key].Size),
-					"("+HumanSize(currMap[key].Size-val.Size)+")",
-				)
+				blu := color.New(color.FgHiBlue)
+				blu.Print("≈ " + key)
+				fmt.Print(" " + HumanSize(currMap[key].Size))
+				color.HiMagenta(" (" + HumanSizeSign(val.Size-prevMap[key].Size) + ")")
 			}
 		}
 	}
-	for key, val := range currMap {
-		if _, ok := prevMap[key]; !ok {
-			color.Green("+ %s %s\n", key, HumanSize(val.Size)) // print added
+	for key, val := range prevMap {
+		if _, ok := currMap[key]; !ok {
+			color.HiRed("- %s %s\n", key, HumanSize(val.Size)) // print deleted
 		}
 	}
 }
@@ -430,7 +437,7 @@ func main() {
 		prevDirInfo = LoadPrevDirInfo(dir.Path, 0)
 
 		start := time.Now()
-		dirInfo, err := ProcessDirectory(dir.Path)
+		currDirInfo, err := ProcessDirectory(dir.Path)
 		processTime := time.Since(start).Round(time.Millisecond)
 		if err != nil {
 			LogErr(err)
@@ -438,38 +445,34 @@ func main() {
 		}
 
 		start = time.Now()
-		SaveDirInfo(dir.Path, dirInfo)
+		SaveDirInfo(dir.Path, currDirInfo)
 		saveTime := time.Since(start).Round(time.Millisecond)
 
 		if gCfg.DetailedMode {
-			DetailedPrintDiff(prevDirInfo.fileMap, dirInfo.fileMap)
+			PrintMapsDiff(prevDirInfo.fileMap, currDirInfo.fileMap)
 		}
 
 		deltaSize := ""
-		if prevDirInfo.Size != 0 && prevDirInfo.Size != dirInfo.Size {
-			var sign = "+"
-			if dirInfo.Size < prevDirInfo.Size {
-				sign = ""
-			}
-			deltaSize = " (" + sign + HumanSize(dirInfo.Size-prevDirInfo.Size) + ")"
+		if prevDirInfo.Size != 0 && prevDirInfo.Size != currDirInfo.Size {
+			deltaSize = " (" + HumanSizeSign(currDirInfo.Size-prevDirInfo.Size) + ")"
 		}
 
 		deltaDirs := ""
-		if prevDirInfo.Dirs != 0 && prevDirInfo.Dirs != dirInfo.Dirs {
-			deltaDirs = " (" + fmt.Sprintf("%+d", dirInfo.Dirs-prevDirInfo.Dirs) + ")"
+		if prevDirInfo.Dirs != 0 && prevDirInfo.Dirs != currDirInfo.Dirs {
+			deltaDirs = " (" + fmt.Sprintf("%+d", currDirInfo.Dirs-prevDirInfo.Dirs) + ")"
 		}
 
 		deltaFiles := ""
-		if prevDirInfo.Files != 0 && prevDirInfo.Files != dirInfo.Files {
-			deltaFiles = " (" + fmt.Sprintf("%+d", dirInfo.Files-prevDirInfo.Files) + ")"
+		if prevDirInfo.Files != 0 && prevDirInfo.Files != currDirInfo.Files {
+			deltaFiles = " (" + fmt.Sprintf("%+d", currDirInfo.Files-prevDirInfo.Files) + ")"
 		}
 
 		tableWriter.AppendRow([]interface{}{
 			dir.Path,
-			HumanSize(dirInfo.Size) + deltaSize,
-			strconv.Itoa(dirInfo.Dirs) + deltaDirs,
-			strconv.Itoa(dirInfo.Files) + deltaFiles,
-			dirInfo.ModTime.Format(time.RFC822),
+			HumanSize(currDirInfo.Size) + deltaSize,
+			strconv.Itoa(currDirInfo.Dirs) + deltaDirs,
+			strconv.Itoa(currDirInfo.Files) + deltaFiles,
+			currDirInfo.ModTime.Format(time.RFC822),
 			processTime.String() + " + " + saveTime.String(),
 		})
 	}

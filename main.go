@@ -26,7 +26,7 @@ var (
 	gCfg       Config
 
 	// command line arguments
-	gReplast    = flag.Bool("replast", false, "Repeat last output (no scan)")
+	gNoSave     = flag.Bool("nosave", false, "Don't save state")
 	gDaemonMode = flag.Bool("daemon", false, "Run in background")
 
 	// paths and files
@@ -100,9 +100,11 @@ func InitDataDirs() {
 	if err != nil && !errors.Is(err, os.ErrExist) {
 		LogErr(err)
 	}
-	err = os.Mkdir(gDataDir+"/"+gStartTime.Format("2006-01-02 15:04:05"), 0777)
-	if err != nil && !errors.Is(err, os.ErrExist) {
-		LogErr(err)
+	if !*gNoSave {
+		err = os.Mkdir(gDataDir+"/"+gStartTime.Format("2006-01-02 15:04:05"), 0777)
+		if err != nil && !errors.Is(err, os.ErrExist) {
+			LogErr(err)
+		}
 	}
 }
 
@@ -363,7 +365,9 @@ func main() {
 
 		// save state
 		start = time.Now()
-		SaveDirInfo(dir.Path, currDirInfo)
+		if !*gNoSave {
+			SaveDirInfo(dir.Path, currDirInfo)
+		}
 		saveTime := time.Since(start).Round(time.Millisecond)
 
 		// print diff
@@ -412,7 +416,10 @@ func main() {
 
 	// calculate free space
 	var space, _ = GetFreeSpace()
-	SaveSnapshot(SnapshotStruct{space})
+
+	if !*gNoSave {
+		SaveSnapshot(SnapshotStruct{space})
+	}
 
 	deltaFreeSpace := ""
 	if prevSnapshot.FreeSpace != 0 && prevSnapshot.FreeSpace != space {

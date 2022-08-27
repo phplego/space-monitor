@@ -2,6 +2,6 @@ go build
 
 if [[ $? -eq 0 ]]
 then
-    ./space-monitor
+    ./space-monitor --nosave
 fi
 

@@ -26,6 +26,7 @@ var (
 	gCfg       Config
 
 	// command line arguments
+	gRepLast    = flag.Bool("replast", false, "Repeat last results")
 	gNoSave     = flag.Bool("nosave", false, "Don't save state")
 	gDaemonMode = flag.Bool("daemon", false, "Run in background")
 
@@ -59,7 +60,8 @@ type GobFileInfo struct {
 }
 
 type SnapshotStruct struct {
-	FreeSpace int64 `yaml:"free-space"`
+	FreeSpace int64     `yaml:"free-space"`
+	StartTime time.Time `yaml:"start-time"`
 }
 
 func LogErr(v ...any) {
@@ -100,7 +102,7 @@ func InitDataDirs() {
 	if err != nil && !errors.Is(err, os.ErrExist) {
 		LogErr(err)
 	}
-	if !*gNoSave {
+	if !*gNoSave && !*gRepLast {
 		err = os.Mkdir(gDataDir+"/"+gStartTime.Format("2006-01-02 15:04:05"), 0777)
 		if err != nil && !errors.Is(err, os.ErrExist) {
 			LogErr(err)
@@ -232,7 +234,7 @@ func LoadPrevSnapshot(stepsBack int) SnapshotStruct {
 	sort.Strings(files)
 	index := len(files) - 1 - stepsBack
 	if index < 0 || index >= len(files) {
-		LogErr("Error: out of bounds snapshot array. index=" + strconv.Itoa(index))
+		LogErr("Error: out of bounds snapshot array. len(files):", len(files), "stepsBack:", stepsBack)
 		return SnapshotStruct{}
 	}
 	last := files[index]
@@ -267,28 +269,6 @@ func DeleteOldSnapshots() {
 			return
 		}
 	}
-}
-
-func GetPrevStartTime() (time.Time, error) {
-	files, _ := os.ReadDir(gDataDir)
-	var dirs []fs.DirEntry
-	for _, file := range files {
-		if file.IsDir() {
-			dirs = append(dirs, file)
-		}
-	}
-	if len(dirs) < 2 {
-		return time.Time{}, errors.New("cannot get prev start time: no previous directories")
-	}
-	sort.Slice(dirs, func(i, j int) bool { // sort dirs (older first)
-		return strings.Compare(dirs[i].Name(), dirs[j].Name()) < 0
-	})
-	lastStartTime, err := time.ParseInLocation("2006-01-02 15:04:05", dirs[len(dirs)-2].Name(), time.Local)
-	if err != nil {
-		LogErr(err)
-		return time.Time{}, err
-	}
-	return lastStartTime, nil
 }
 
 func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
@@ -364,6 +344,11 @@ func main() {
 	InitConfig()
 	InitDataDirs()
 
+	var stepsBack = 0
+	if *gRepLast {
+		stepsBack = 1 // pre-previous
+	}
+
 	tableWriter := table.NewWriter()
 	tableWriter.SetStyle(table.StyleRounded)
 	tableWriter.SetOutputMirror(os.Stdout)
@@ -371,21 +356,29 @@ func main() {
 
 	// for each directory
 	for _, dir := range gCfg.Dirs {
+
 		// load previous state of the directory
-		prevDirInfo, loadErr := LoadPrevDirInfo(dir.Path, 0)
+		prevDirInfo, loadErr := LoadPrevDirInfo(dir.Path, stepsBack)
 
 		// calculate current state
+		var currDirInfo DirInfoStruct
 		start := time.Now()
-		currDirInfo, err := ProcessDirectory(dir.Path)
-		processTime := time.Since(start).Round(time.Millisecond)
-		if err != nil {
-			LogErr(err)
-			//continue
+		if *gRepLast {
+			currDirInfo, _ = LoadPrevDirInfo(dir.Path, 0)
+		} else {
+			var err error
+			currDirInfo, err = ProcessDirectory(dir.Path)
+			if err != nil {
+				LogErr(err)
+				//continue
+			}
 		}
+
+		processTime := time.Since(start).Round(time.Millisecond)
 
 		// save state
 		start = time.Now()
-		if !*gNoSave {
+		if !*gNoSave && !*gRepLast {
 			SaveDirInfo(dir.Path, currDirInfo)
 		}
 		saveTime := time.Since(start).Round(time.Millisecond)
@@ -418,39 +411,46 @@ func main() {
 			currDirInfo.ModTime.Format(time.RFC822),
 			processTime.String() + " + " + saveTime.String(),
 		})
+	} // dir loop
+
+	prevSnapshot := LoadPrevSnapshot(stepsBack)
+
+	// calculate free space
+	currentFreeSpace, _ := GetFreeSpace()
+	displayedStartTime := gStartTime
+
+	if *gRepLast {
+		currSnapshot := LoadPrevSnapshot(0)
+		displayedStartTime = currSnapshot.StartTime
+		currentFreeSpace = currSnapshot.FreeSpace
 	}
 
 	tableWriter.AppendSeparator()
-	prevStartTime, err := GetPrevStartTime()
-	if err == nil {
+	prevStartTime := prevSnapshot.StartTime
+	if true {
 		tableWriter.AppendRow(table.Row{ // print previous start time
-			ColorHeader("prev stime"),
+			ColorHeader("prev stime (t₀)"),
 			ColorPale(prevStartTime.Format("02 Jan 15:04")),
 			ColorPale(TimeAgo(prevStartTime)),
 		})
 	}
-	tableWriter.AppendRow(table.Row{ColorHeaderHi("start time"), gStartTime.Format("02 Jan 15:04"), "~ now"})
+	tableWriter.AppendRow(table.Row{
+		ColorHeaderHi("start time (t₁)"),
+		displayedStartTime.Format("02 Jan 15:04"),
+		TimeAgo(displayedStartTime),
+	})
 	tableWriter.AppendSeparator()
 
-	prevSnapshot := LoadPrevSnapshot(0)
-
-	// calculate free space
-	var space, _ = GetFreeSpace()
-
-	if !*gNoSave {
-		SaveSnapshot(SnapshotStruct{space})
+	if !*gNoSave && !*gRepLast {
+		SaveSnapshot(SnapshotStruct{currentFreeSpace, gStartTime})
 	}
 
 	deltaFreeSpace := ""
-	if prevSnapshot.FreeSpace != 0 && prevSnapshot.FreeSpace != space {
-		var sign = "+"
-		if space < prevSnapshot.FreeSpace {
-			sign = ""
-		}
-		deltaFreeSpace = " (" + sign + HumanSize(space-prevSnapshot.FreeSpace) + ")"
+	if prevSnapshot.FreeSpace != 0 && prevSnapshot.FreeSpace != currentFreeSpace {
+		deltaFreeSpace = " (" + HumanSizeSign(currentFreeSpace-prevSnapshot.FreeSpace) + ")"
 	}
 
-	tableWriter.AppendRow(table.Row{"FREE SPACE", color.HiGreenString(HumanSize(space)) + deltaFreeSpace, "", "", "", time.Since(gStartTime).Round(time.Millisecond)})
+	tableWriter.AppendRow(table.Row{"FREE SPACE", color.HiGreenString(HumanSize(currentFreeSpace)) + deltaFreeSpace, "", "", "", time.Since(gStartTime).Round(time.Millisecond)})
 	tableWriter.Render()
 
 	DeleteOldSnapshots()

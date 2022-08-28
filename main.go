@@ -46,13 +46,14 @@ type Config_DirectorySettings struct {
 }
 
 type DirInfoStruct struct {
-	Path      string                 `yaml:"path"`
-	Size      int64                  `yaml:"size"`
-	Files     int                    `yaml:"files"`
-	Dirs      int                    `yaml:"dirs"`
-	ModTime   time.Time              `yaml:"mtime"` // the time of the latest modified file in the directory
-	StartTime time.Time              `yaml:"stime"` // the time when the scan was started
-	fileMap   map[string]GobFileInfo // for detailed mode
+	Path         string    `yaml:"path"`
+	Size         int64     `yaml:"size"`
+	Files        int       `yaml:"files"`
+	Dirs         int       `yaml:"dirs"`
+	ModTime      time.Time `yaml:"mtime"` // the time of the latest modified file in the directory
+	StartTime    time.Time `yaml:"stime"` // the time when the scan was started
+	walkDuration time.Duration
+	fileMap      map[string]GobFileInfo // for detailed mode
 }
 
 type GobFileInfo struct {
@@ -62,6 +63,7 @@ type GobFileInfo struct {
 type SnapshotStruct struct {
 	FreeSpace int64     `yaml:"free-space"`
 	StartTime time.Time `yaml:"start-time"`
+	infoList  []DirInfoStruct
 }
 
 func LogErr(v ...any) {
@@ -333,6 +335,68 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 		colorDeleted.Print(relPath)
 		fmt.Println()
 	}
+}
+
+func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
+	tableWriter := table.NewWriter()
+	tableWriter.SetStyle(table.StyleRounded)
+	tableWriter.SetOutputMirror(os.Stdout)
+	tableWriter.AppendHeader(table.Row{"path", "size", "sirs", "files", "last modified", "walk time"})
+
+	for i, currDirInfo := range currSnapshot.infoList {
+		prevDirInfo := prevSnapshot.infoList[i]
+
+		var deltaSize, deltaDirs, deltaFiles string
+
+		if prevDirInfo.Path != "" {
+			if prevDirInfo.Size != currDirInfo.Size {
+				deltaSize = " (" + HumanSizeSign(currDirInfo.Size-prevDirInfo.Size) + ")"
+			}
+			if prevDirInfo.Dirs != currDirInfo.Dirs {
+				deltaDirs = " (" + fmt.Sprintf("%+d", currDirInfo.Dirs-prevDirInfo.Dirs) + ")"
+			}
+			if prevDirInfo.Files != currDirInfo.Files {
+				deltaFiles = " (" + fmt.Sprintf("%+d", currDirInfo.Files-prevDirInfo.Files) + ")"
+			}
+		}
+
+		tableWriter.AppendRow([]interface{}{
+			currDirInfo.Path,
+			HumanSize(currDirInfo.Size) + deltaSize,
+			strconv.Itoa(currDirInfo.Dirs) + deltaDirs,
+			strconv.Itoa(currDirInfo.Files) + deltaFiles,
+			currDirInfo.ModTime.Format(time.RFC822),
+			currDirInfo.walkDuration,
+		})
+	}
+
+	tableWriter.AppendSeparator()
+	if prevSnapshot.FreeSpace > 0 {
+		tableWriter.AppendRow(table.Row{ // print previous start time
+			ColorHeader("prev stime (t₀)"),
+			ColorPale(prevSnapshot.StartTime.Format("02 Jan 15:04")),
+			ColorPale(TimeAgo(prevSnapshot.StartTime)),
+		})
+	}
+	tableWriter.AppendRow(table.Row{
+		ColorHeaderHi("start time (t₁)"),
+		currSnapshot.StartTime.Format("02 Jan 15:04"),
+		TimeAgo(currSnapshot.StartTime),
+	})
+	tableWriter.AppendSeparator()
+
+	deltaFreeSpace := ""
+	if prevSnapshot.FreeSpace != 0 && prevSnapshot.FreeSpace != currSnapshot.FreeSpace {
+		deltaFreeSpace = " (" + HumanSizeSign(currSnapshot.FreeSpace-prevSnapshot.FreeSpace) + ")"
+	}
+
+	tableWriter.AppendRow(table.Row{
+		"FREE SPACE",
+		color.HiGreenString(HumanSize(currSnapshot.FreeSpace)) + deltaFreeSpace,
+		"", "", "",
+		time.Since(gStartTime).Round(time.Millisecond),
+	})
+	tableWriter.Render()
 
 }
 
@@ -349,16 +413,28 @@ func main() {
 		stepsBack = 1 // pre-previous
 	}
 
-	tableWriter := table.NewWriter()
-	tableWriter.SetStyle(table.StyleRounded)
-	tableWriter.SetOutputMirror(os.Stdout)
-	tableWriter.AppendHeader(table.Row{"path", "Size", "Dirs", "Files", "last modified", "walk time"})
+	prevSnapshot := LoadPrevSnapshot(stepsBack)
+
+	// calculate free space
+	_freeSpace, _ := GetFreeSpace()
+
+	var currSnapshot = SnapshotStruct{
+		FreeSpace: _freeSpace,
+		StartTime: gStartTime,
+	}
+
+	if *gRepLast {
+		currSnapshot = LoadPrevSnapshot(0)
+	}
+
+	if !*gNoSave && !*gRepLast {
+		SaveSnapshot(currSnapshot)
+	}
 
 	// for each directory
 	for _, dir := range gCfg.Dirs {
-
 		// load previous state of the directory
-		prevDirInfo, loadErr := LoadPrevDirInfo(dir.Path, stepsBack)
+		prevDirInfo, _ := LoadPrevDirInfo(dir.Path, stepsBack)
 
 		// calculate current state
 		var currDirInfo DirInfoStruct
@@ -373,92 +449,29 @@ func main() {
 				//continue
 			}
 		}
+		currDirInfo.walkDuration = time.Since(start).Round(time.Millisecond)
 
-		processTime := time.Since(start).Round(time.Millisecond)
+		prevSnapshot.infoList = append(prevSnapshot.infoList, prevDirInfo)
+		currSnapshot.infoList = append(currSnapshot.infoList, currDirInfo)
 
-		// save state
-		start = time.Now()
 		if !*gNoSave && !*gRepLast {
 			SaveDirInfo(dir.Path, currDirInfo)
 		}
-		saveTime := time.Since(start).Round(time.Millisecond)
 
 		// print diff
 		if gCfg.DetailedMode {
 			PrintDiff(prevDirInfo, currDirInfo)
 		}
-
-		deltaSize := ""
-		if loadErr == nil && prevDirInfo.Size != currDirInfo.Size {
-			deltaSize = " (" + HumanSizeSign(currDirInfo.Size-prevDirInfo.Size) + ")"
-		}
-
-		deltaDirs := ""
-		if loadErr == nil && prevDirInfo.Dirs != currDirInfo.Dirs {
-			deltaDirs = " (" + fmt.Sprintf("%+d", currDirInfo.Dirs-prevDirInfo.Dirs) + ")"
-		}
-
-		deltaFiles := ""
-		if loadErr == nil && prevDirInfo.Files != currDirInfo.Files {
-			deltaFiles = " (" + fmt.Sprintf("%+d", currDirInfo.Files-prevDirInfo.Files) + ")"
-		}
-
-		tableWriter.AppendRow([]interface{}{
-			dir.Path,
-			HumanSize(currDirInfo.Size) + deltaSize,
-			strconv.Itoa(currDirInfo.Dirs) + deltaDirs,
-			strconv.Itoa(currDirInfo.Files) + deltaFiles,
-			currDirInfo.ModTime.Format(time.RFC822),
-			processTime.String() + " + " + saveTime.String(),
-		})
 	} // dir loop
 
-	prevSnapshot := LoadPrevSnapshot(stepsBack)
-
-	// calculate free space
-	currentFreeSpace, _ := GetFreeSpace()
-	displayedStartTime := gStartTime
-
-	if *gRepLast {
-		currSnapshot := LoadPrevSnapshot(0)
-		displayedStartTime = currSnapshot.StartTime
-		currentFreeSpace = currSnapshot.FreeSpace
-	}
-
-	tableWriter.AppendSeparator()
-	prevStartTime := prevSnapshot.StartTime
-	if true {
-		tableWriter.AppendRow(table.Row{ // print previous start time
-			ColorHeader("prev stime (t₀)"),
-			ColorPale(prevStartTime.Format("02 Jan 15:04")),
-			ColorPale(TimeAgo(prevStartTime)),
-		})
-	}
-	tableWriter.AppendRow(table.Row{
-		ColorHeaderHi("start time (t₁)"),
-		displayedStartTime.Format("02 Jan 15:04"),
-		TimeAgo(displayedStartTime),
-	})
-	tableWriter.AppendSeparator()
-
-	if !*gNoSave && !*gRepLast {
-		SaveSnapshot(SnapshotStruct{currentFreeSpace, gStartTime})
-	}
-
-	deltaFreeSpace := ""
-	if prevSnapshot.FreeSpace != 0 && prevSnapshot.FreeSpace != currentFreeSpace {
-		deltaFreeSpace = " (" + HumanSizeSign(currentFreeSpace-prevSnapshot.FreeSpace) + ")"
-	}
-
-	tableWriter.AppendRow(table.Row{"FREE SPACE", color.HiGreenString(HumanSize(currentFreeSpace)) + deltaFreeSpace, "", "", "", time.Since(gStartTime).Round(time.Millisecond)})
-	tableWriter.Render()
+	// print result table
+	PrintTable(prevSnapshot, currSnapshot)
 
 	DeleteOldSnapshots()
 
 	if *gDaemonMode {
 		fmt.Println("Running in daemon mode..")
 		for {
-
 		}
 	}
 }

@@ -189,7 +189,11 @@ func ProcessDirectory(dir string) (DirInfoStruct, error) {
 			//return err // return error if you want to break walking
 		} else {
 			if gCfg.DetailedMode {
-				info.fileMap[path] = GobFileInfo{Size: fileInfo.Size()}
+				var size int64 = 0
+				if !fileInfo.IsDir() {
+					size = fileInfo.Size()
+				}
+				info.fileMap[path] = GobFileInfo{Size: size}
 			}
 
 			modTime := fileInfo.ModTime()
@@ -341,7 +345,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 	tableWriter := table.NewWriter()
 	tableWriter.SetStyle(table.StyleRounded)
 	tableWriter.SetOutputMirror(os.Stdout)
-	tableWriter.AppendHeader(table.Row{"path", "size", "sirs", "files", "last modified", "walk time"})
+	tableWriter.AppendHeader(table.Row{"path", "size", "sirs", "files" /*"last modified",*/, "walk time"})
 
 	for i, currDirInfo := range currSnapshot.infoList {
 		prevDirInfo := prevSnapshot.infoList[i]
@@ -365,7 +369,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 			HumanSize(currDirInfo.Size) + deltaSize,
 			strconv.Itoa(currDirInfo.Dirs) + deltaDirs,
 			strconv.Itoa(currDirInfo.Files) + deltaFiles,
-			currDirInfo.ModTime.Format(time.RFC822),
+			//currDirInfo.ModTime.Format(time.RFC822),
 			currDirInfo.walkDuration,
 		})
 	}
@@ -393,7 +397,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 	tableWriter.AppendRow(table.Row{
 		"FREE SPACE",
 		color.HiGreenString(HumanSize(currSnapshot.FreeSpace)) + deltaFreeSpace,
-		"", "", "",
+		"", "", /*"",*/
 		time.Since(gStartTime).Round(time.Millisecond),
 	})
 	tableWriter.Render()

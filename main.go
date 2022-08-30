@@ -345,7 +345,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 	tableWriter := table.NewWriter()
 	tableWriter.SetStyle(table.StyleRounded)
 	tableWriter.SetOutputMirror(os.Stdout)
-	tableWriter.AppendHeader(table.Row{"path", "size", "sirs", "files" /*"last modified",*/, "walk time"})
+	tableWriter.AppendHeader(table.Row{"path", "size", "dirs", "files" /*"last modified",*/, "walk time"})
 
 	for i, currDirInfo := range currSnapshot.infoList {
 		prevDirInfo := prevSnapshot.infoList[i]

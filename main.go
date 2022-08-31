@@ -128,7 +128,12 @@ func InitStdoutSaver() {
 	os.Stdout = pipeWriter
 	color.Output = os.Stdout
 	go func() {
-		_, _ = io.Copy(multiWriter, pipeReader) // stucks forever
+		for {
+			_, err := io.Copy(multiWriter, pipeReader) // stucks forever
+			if err != nil {
+				origStdout.WriteString("io.Copy error: " + err.Error())
+			}
+		}
 	}()
 }
 

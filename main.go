@@ -10,6 +10,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"gopkg.in/yaml.v2"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -21,7 +22,7 @@ import (
 )
 
 var (
-	gStartTime time.Time
+	gStartTime time.Time = time.Now() // application start time
 	gLogger    log.Logger
 	gCfg       Config
 
@@ -71,6 +72,10 @@ func LogErr(v ...any) {
 	color.New(color.FgHiRed, color.Italic).Println(v...)
 }
 
+func GetSnapshotDirectory() string {
+	return gDataDir + "/" + gStartTime.Format("2006-01-02 15:04:05")
+}
+
 func InitLogger() {
 	var logFilename = GetAppDir() + "/space-monitor.log"
 	file, err := os.OpenFile(logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
@@ -105,17 +110,34 @@ func InitDataDirs() {
 		LogErr(err)
 	}
 	if !*gNoSave && !*gRepLast {
-		err = os.Mkdir(gDataDir+"/"+gStartTime.Format("2006-01-02 15:04:05"), 0777)
+		err = os.Mkdir(GetSnapshotDirectory(), 0777)
 		if err != nil && !errors.Is(err, os.ErrExist) {
 			LogErr(err)
 		}
 	}
 }
 
+func InitStdoutSaver() {
+	if *gNoSave || *gRepLast { // don't save report.txt when nosave mode or replast option
+		return
+	}
+	reportFile, _ := os.OpenFile(GetSnapshotDirectory()+"/report.txt", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	origStdout := os.Stdout
+	multiWriter := io.MultiWriter(reportFile, origStdout)
+	pipeReader, pipeWriter, _ := os.Pipe()
+	os.Stdout = pipeWriter
+	color.Output = os.Stdout
+	go func() {
+		_, _ = io.Copy(multiWriter, pipeReader) // stucks forever
+	}()
+}
+
 func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 	pathHash := GetHash(path)
-	dirInfoFilePath := fmt.Sprintf(gDataDir+"/%s/dirinfo-%s.dat", gStartTime.Format("2006-01-02 15:04:05"), pathHash)
+	dirInfoFilePath := fmt.Sprintf(GetSnapshotDirectory()+"/dirinfo-%s.dat", pathHash)
 	dirInfoFile, err := os.OpenFile(dirInfoFilePath, os.O_WRONLY|os.O_CREATE, 0666)
+	// noinspection GoUnhandledErrorResult
+	defer dirInfoFile.Close()
 	if err != nil {
 		LogErr(err)
 		os.Exit(1)
@@ -123,6 +145,7 @@ func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 
 	if gCfg.DetailedMode {
 		encodeFile, err := os.Create(strings.Replace(dirInfoFilePath, ".dat", ".gob", 1))
+		// noinspection GoUnhandledErrorResult
 		defer encodeFile.Close()
 		if err != nil {
 			LogErr(err)
@@ -165,6 +188,7 @@ func LoadPrevDirInfo(dir string, stepsBack int) (DirInfoStruct, error) {
 		if err != nil {
 			return info, err
 		}
+		// noinspection GoUnhandledErrorResult
 		defer decodeFile.Close()
 		decoder := gob.NewDecoder(decodeFile)
 		err = decoder.Decode(&info.fileMap)
@@ -214,8 +238,9 @@ func ProcessDirectory(dir string) (DirInfoStruct, error) {
 }
 
 func SaveSnapshot(snapshot SnapshotStruct) {
-	snapshotFilePath := fmt.Sprintf(gDataDir+"/%s/snapshot.dat", gStartTime.Format("2006-01-02 15:04:05"))
-	snapshotFile, err := os.OpenFile(snapshotFilePath, os.O_WRONLY|os.O_CREATE, 0666)
+	snapshotFile, err := os.OpenFile(GetSnapshotDirectory()+"/snapshot.dat", os.O_WRONLY|os.O_CREATE, 0666)
+	// noinspection GoUnhandledErrorResult
+	defer snapshotFile.Close()
 	if err != nil {
 		LogErr("error opening snapshot file: %v", err)
 		os.Exit(1)
@@ -405,12 +430,12 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 }
 
 func main() {
-	gStartTime = time.Now()
 	flag.Parse()
 
 	InitLogger()
 	InitConfig()
 	InitDataDirs()
+	InitStdoutSaver()
 
 	var stepsBack = 0
 	if *gRepLast {
@@ -476,6 +501,7 @@ func main() {
 	if *gDaemonMode {
 		fmt.Println("Running in daemon mode..")
 		for {
+			time.Sleep(time.Millisecond * 100)
 		}
 	}
 }

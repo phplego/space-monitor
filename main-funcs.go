@@ -25,7 +25,7 @@ var gTimeAgoConfig = timeago.Config{
 		{timeago.Month, "one mon", "%d mons"},
 		{timeago.Year, "one year", "%d yrs"},
 	},
-	Zero:          "just now",
+	Zero:          "moments",
 	Max:           99 * timeago.Year,
 	DefaultLayout: "2006-01-02",
 }

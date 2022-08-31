@@ -440,7 +440,7 @@ func main() {
 	InitLogger()
 	InitConfig()
 	InitDataDirs()
-	InitStdoutSaver()
+	//InitStdoutSaver()
 
 	var stepsBack = 0
 	if *gRepLast {

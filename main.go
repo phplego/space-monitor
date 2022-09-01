@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"space-monitor/libs/fmt2"
 	"strconv"
 	"strings"
 	"time"
@@ -122,19 +123,9 @@ func InitStdoutSaver() {
 		return
 	}
 	reportFile, _ := os.OpenFile(GetSnapshotDirectory()+"/report.txt", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	origStdout := os.Stdout
-	multiWriter := io.MultiWriter(reportFile, origStdout)
-	pipeReader, pipeWriter, _ := os.Pipe()
-	os.Stdout = pipeWriter
-	color.Output = os.Stdout
-	go func() {
-		for {
-			_, err := io.Copy(multiWriter, pipeReader) // stucks forever
-			if err != nil {
-				origStdout.WriteString("io.Copy error: " + err.Error())
-			}
-		}
-	}()
+	multiWriter := io.MultiWriter(reportFile, os.Stdout)
+	color.Output = multiWriter
+	fmt2.OutWriter = multiWriter
 }
 
 func SaveDirInfo(path string, dirInfo DirInfoStruct) {
@@ -172,7 +163,7 @@ func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 func LoadPrevDirInfo(dir string, stepsBack int) (DirInfoStruct, error) {
 	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/*/dirinfo-%s.dat", GetHash(dir)))
 	if files == nil {
-		fmt.Println("no dirinfo files for", color.BlueString(dir), "is it first run?")
+		fmt2.Println("no dirinfo files for", color.BlueString(dir), "is it first run?")
 		return DirInfoStruct{}, errors.New("no prev dirinfo files")
 	}
 	sort.Strings(files)
@@ -264,7 +255,7 @@ func LoadPrevSnapshot(stepsBack int) SnapshotStruct {
 		os.Exit(1)
 	}
 	if files == nil {
-		fmt.Println("no snapshot files; is it first run?")
+		fmt2.Println("no snapshot files; is it first run?")
 		return SnapshotStruct{}
 	}
 	sort.Strings(files)
@@ -349,7 +340,7 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 		colorAdded.Printf("%-10s", HumanSize(val.Size))
 		colorAddedDirPart.Print(AbsPath(currDirInfo.Path))
 		colorAdded.Print(relPath)
-		fmt.Println()
+		colorAdded.Println()
 	}
 	for _, key := range modList {
 		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
@@ -367,14 +358,14 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 		colorDeleted.Printf("%-10s", HumanSize(val.Size))
 		colorDeletedDirPart.Print(currDirInfo.Path)
 		colorDeleted.Print(relPath)
-		fmt.Println()
+		colorDeleted.Println()
 	}
 }
 
 func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 	tableWriter := table.NewWriter()
 	tableWriter.SetStyle(table.StyleRounded)
-	tableWriter.SetOutputMirror(os.Stdout)
+	//tableWriter.SetOutputMirror(os.Stdout)
 	tableWriter.AppendHeader(table.Row{"path", "size", "dirs", "files" /*"last modified",*/, "walk time"})
 
 	for i, currDirInfo := range currSnapshot.infoList {
@@ -430,7 +421,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 		"", "", /*"",*/
 		time.Since(gStartTime).Round(time.Millisecond),
 	})
-	tableWriter.Render()
+	fmt2.Println(tableWriter.Render())
 
 }
 
@@ -504,7 +495,7 @@ func main() {
 	DeleteOldSnapshots()
 
 	if *gDaemonMode {
-		fmt.Println("Running in daemon mode..")
+		fmt2.Println("Running in daemon mode..")
 		for {
 			time.Sleep(time.Millisecond * 100)
 		}

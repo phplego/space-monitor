@@ -80,7 +80,7 @@ func InitLogger() {
 	var logFilename = GetAppDir() + "/space-monitor.log"
 	file, err := os.OpenFile(logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		LogErr("error opening file: %v", err)
+		LogErr("error opening file:", err)
 		os.Exit(1)
 	}
 	gLogger = *log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
@@ -247,7 +247,7 @@ func SaveSnapshot(snapshot SnapshotStruct) {
 	// noinspection GoUnhandledErrorResult
 	defer snapshotFile.Close()
 	if err != nil {
-		LogErr("error opening snapshot file: %v", err)
+		LogErr("error opening snapshot file: ", err)
 		os.Exit(1)
 	}
 	bytes, _ := yaml.Marshal(snapshot)
@@ -440,7 +440,7 @@ func main() {
 	InitLogger()
 	InitConfig()
 	InitDataDirs()
-	//InitStdoutSaver()
+	InitStdoutSaver()
 
 	var stepsBack = 0
 	if *gRepLast {

@@ -3,6 +3,7 @@ module space-monitor
 go 1.19
 
 require (
+	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d
 	github.com/fatih/color v1.13.0
 	github.com/ilyakaznacheev/cleanenv v1.3.0
 	github.com/jedib0t/go-pretty/v6 v6.3.6

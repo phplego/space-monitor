@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/acarl005/stripansi"
 	"github.com/fatih/color"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -123,7 +124,12 @@ func InitStdoutSaver() {
 		return
 	}
 	reportFile, _ := os.OpenFile(GetSnapshotDirectory()+"/report.txt", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	multiWriter := io.MultiWriter(reportFile, os.Stdout)
+	reportFlBW, _ := os.OpenFile(GetSnapshotDirectory()+"/report-bw.txt", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	bwWriter := FilterFunc(reportFlBW, func(bytes []byte) []byte {
+		str := stripansi.Strip(string(bytes))
+		return []byte(str)
+	})
+	multiWriter := io.MultiWriter(os.Stdout, bwWriter, reportFile)
 	color.Output = multiWriter
 	fmt2.OutWriter = multiWriter
 }

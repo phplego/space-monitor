@@ -64,6 +64,21 @@ type GobFileInfo struct {
 	Size  int64
 }
 
+type ChangeType int
+
+const (
+	Added ChangeType = iota
+	Modified
+	Deleted
+)
+
+type Change struct {
+	path       string
+	changeType ChangeType
+	gob        GobFileInfo
+	deltaSize  int64
+}
+
 type SnapshotStruct struct {
 	FreeSpace int64     `yaml:"free-space"`
 	StartTime time.Time `yaml:"start-time"`
@@ -316,21 +331,6 @@ func DeleteOldSnapshots() {
 			return
 		}
 	}
-}
-
-type ChangeType int
-
-const (
-	Added ChangeType = iota
-	Modified
-	Deleted
-)
-
-type Change struct {
-	path       string
-	changeType ChangeType
-	gob        GobFileInfo
-	deltaSize  int64
 }
 
 func Diff(prevDirInfo, currDirInfo DirInfoStruct) []Change {

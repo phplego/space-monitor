@@ -60,7 +60,8 @@ type DirInfoStruct struct {
 }
 
 type GobFileInfo struct {
-	Size int64
+	IsDir bool
+	Size  int64
 }
 
 type SnapshotStruct struct {
@@ -175,7 +176,7 @@ func LoadPrevDirInfo(dir string, stepsBack int) (DirInfoStruct, error) {
 	sort.Strings(files)
 	index := len(files) - 1 - stepsBack
 	if index < 0 || index >= len(files) {
-		return DirInfoStruct{}, errors.New("Error: out of bounds dirinfo array. index=" + strconv.Itoa(index))
+		return DirInfoStruct{}, errors.New("out of bounds dirinfo array. index=" + strconv.Itoa(index))
 	}
 	last := files[index]
 	bytes, _ := os.ReadFile(last)
@@ -219,7 +220,20 @@ func ProcessDirectory(dir string) (DirInfoStruct, error) {
 				if !fileInfo.IsDir() {
 					size = fileInfo.Size()
 				}
-				info.fileMap[path] = GobFileInfo{Size: size}
+				info.fileMap[path] = GobFileInfo{IsDir: fileInfo.IsDir(), Size: size}
+
+				// increment size of all parent dirs
+				current := filepath.Dir(path)
+				for strings.HasPrefix(current, dir) {
+					//fmt2.Println("current:", current)
+					if gobInfo, ok := info.fileMap[current]; ok {
+						gobInfo.Size += size
+						info.fileMap[current] = gobInfo
+					} else {
+						LogErr("Unknown parent:", current, "for file:", path)
+					}
+					current = filepath.Dir(current)
+				}
 			}
 
 			modTime := fileInfo.ModTime()
@@ -267,7 +281,7 @@ func LoadPrevSnapshot(stepsBack int) SnapshotStruct {
 	sort.Strings(files)
 	index := len(files) - 1 - stepsBack
 	if index < 0 || index >= len(files) {
-		LogErr("Error: out of bounds snapshot array. len(files):", len(files), "stepsBack:", stepsBack)
+		LogErr("out of bounds snapshot array. len(files):", len(files), "stepsBack:", stepsBack)
 		return SnapshotStruct{}
 	}
 	last := files[index]
@@ -304,12 +318,53 @@ func DeleteOldSnapshots() {
 	}
 }
 
-func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
+type ChangeType int
+
+const (
+	Added ChangeType = iota
+	Modified
+	Deleted
+)
+
+type Change struct {
+	path       string
+	changeType ChangeType
+	gob        GobFileInfo
+	deltaSize  int64
+}
+
+func Diff(prevDirInfo, currDirInfo DirInfoStruct) []Change {
 	var prevMap = prevDirInfo.fileMap
 	var currMap = currDirInfo.fileMap
+
 	if len(prevMap) == 0 {
-		return // skip empty map (eg. when first run)
+		return []Change{} // skip empty map (eg. when first run)
 	}
+
+	var changes []Change
+
+	for key := range currMap {
+		if _, ok := prevMap[key]; !ok {
+			changes = append(changes, Change{key, Added, currMap[key], currMap[key].Size})
+		} else {
+			if currMap[key].Size != prevMap[key].Size {
+				changes = append(changes, Change{key, Modified, currMap[key], currMap[key].Size - prevMap[key].Size})
+			}
+		}
+	}
+	for key := range prevMap {
+		if _, ok := currMap[key]; !ok {
+			changes = append(changes, Change{key, Deleted, prevMap[key], 0 - prevMap[key].Size})
+		}
+	}
+
+	sort.Slice(changes, func(i, j int) bool { // sort changes by path
+		return strings.Compare(changes[i].path, changes[j].path) < 0
+	})
+	return changes
+}
+
+func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 	colorModifiedDirPart := color.New(color.BgBlue, color.FgWhite)
 	colorModified := color.New(color.FgHiBlue)
 	colorAdded := color.New(color.FgHiGreen)
@@ -317,54 +372,54 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 	colorDeleted := color.New(color.FgHiRed)
 	colorDeletedDirPart := color.New(color.BgRed, color.FgWhite)
 	colorDelta := color.New(color.FgHiMagenta)
-	var addList []string
-	var modList []string
-	var delList []string
 
-	for key := range currMap {
-		if _, ok := prevMap[key]; !ok {
-			addList = append(addList, key)
-		} else {
-			if currMap[key].Size != prevMap[key].Size {
-				modList = append(modList, key)
+	changes := Diff(prevDirInfo, currDirInfo)
+	if len(changes) == 0 {
+		return
+	}
+
+	color.New(color.Bold, color.FgWhite).Printf("\n\nDiff of %s:\n\n", currDirInfo.Path)
+
+	for _, change := range changes {
+		relPath := strings.Replace(change.path, AbsPath(currDirInfo.Path), "", 1)
+		var col, colDirPart *color.Color
+		var symbol, icon string
+		switch change.changeType {
+		case Added:
+			symbol = "+"
+			col = colorAdded
+			colDirPart = colorAddedDirPart
+		case Modified:
+			symbol = "↗"
+			if change.deltaSize < 0 {
+				symbol = "↘"
 			}
+			col = colorModified
+			colDirPart = colorModifiedDirPart
+		case Deleted:
+			symbol = "-"
+			col = colorDeleted
+			colDirPart = colorDeletedDirPart
 		}
-	}
-	for key := range prevMap {
-		if _, ok := currMap[key]; !ok {
-			delList = append(delList, key)
-		}
-	}
 
-	sort.Strings(addList)
-	sort.Strings(modList)
-	sort.Strings(delList)
-	for _, key := range addList {
-		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
-		val := currMap[key]
-		colorAdded.Print("+ ")
-		colorAdded.Printf("%-10s", HumanSize(val.Size))
-		colorAddedDirPart.Print(AbsPath(currDirInfo.Path))
-		colorAdded.Print(relPath)
-		colorAdded.Println()
-	}
-	for _, key := range modList {
-		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
-		val := currMap[key]
-		colorModified.Print("≈ ")
-		colorModified.Printf("%-10s", HumanSize(val.Size))
-		colorModifiedDirPart.Print(AbsPath(currDirInfo.Path))
-		colorModified.Print(relPath)
-		colorDelta.Print(" (", HumanSizeSign(val.Size-prevMap[key].Size), ")\n")
-	}
-	for _, key := range delList {
-		relPath := strings.Replace(key, AbsPath(currDirInfo.Path), "", 1)
-		val := prevMap[key] // use prev map (!)
-		colorDeleted.Print("- ")
-		colorDeleted.Printf("%-10s", HumanSize(val.Size))
-		colorDeletedDirPart.Print(currDirInfo.Path)
-		colorDeleted.Print(relPath)
-		colorDeleted.Println()
+		switch change.gob.IsDir {
+		case true:
+			icon = "🗀"
+		case false:
+			icon = ""
+		}
+
+		col.Printf(" %-2s ", icon)
+		col.Printf("%-2s", symbol)
+		col.Printf("%-10s", HumanSize(change.gob.Size))
+		if change.changeType == Modified {
+			colorDelta.Printf("%-11s", HumanSizeSign(change.deltaSize))
+		} else {
+			colorDelta.Printf("%-11s", "")
+		}
+		colDirPart.Print(AbsPath(currDirInfo.Path))
+		col.Print(relPath)
+		col.Println()
 	}
 }
 
@@ -396,7 +451,6 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 			HumanSize(currDirInfo.Size) + deltaSize,
 			strconv.Itoa(currDirInfo.Dirs) + deltaDirs,
 			strconv.Itoa(currDirInfo.Files) + deltaFiles,
-			//currDirInfo.ModTime.Format(time.RFC822),
 			currDirInfo.walkDuration,
 		})
 	}
@@ -424,7 +478,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 	tableWriter.AppendRow(table.Row{
 		"FREE SPACE",
 		color.HiGreenString(HumanSize(currSnapshot.FreeSpace)) + deltaFreeSpace,
-		"", "", /*"",*/
+		"", "",
 		time.Since(gStartTime).Round(time.Millisecond),
 	})
 	fmt2.Println(tableWriter.Render())
@@ -496,9 +550,13 @@ func main() {
 	} // dir loop
 
 	// print result table
+	fmt2.Println()
 	PrintTable(prevSnapshot, currSnapshot)
 
 	DeleteOldSnapshots()
+
+	//width, height, _ := terminal.GetSize(0)
+	//fmt2.Println("size", width, height)
 
 	if *gDaemonMode {
 		fmt2.Println("Running in daemon mode..")

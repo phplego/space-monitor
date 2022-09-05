@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/fatih/color"
+	"github.com/shirou/gopsutil/disk"
 	"github.com/xeonx/timeago"
-	"golang.org/x/sys/unix"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -79,16 +79,23 @@ func HumanSizeSign(bytes int64) string {
 }
 
 func GetFreeSpace() (int64, error) {
-	wd, err := os.Getwd()
-	var stat unix.Statfs_t
 
-	err = unix.Statfs(wd, &stat)
+	di, err := disk.Usage(".")
 	if err != nil {
 		return 0, err
 	}
+	return int64(di.Free), nil
 
-	// Available blocks * Size per block = available space in bytes
-	return int64(stat.Bavail) * int64(stat.Bsize), nil
+	//wd, err := os.Getwd()
+	//var stat unix.Statfs_t
+	//
+	//err = unix.Statfs(wd, &stat)
+	//if err != nil {
+	//	return 0, err
+	//}
+	//
+	//// Available blocks * Size per block = available space in bytes
+	//return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
 func GetAppDir() string {

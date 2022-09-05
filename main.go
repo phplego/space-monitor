@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"space-monitor/libs/fmt2"
 	"strconv"
@@ -69,9 +70,9 @@ type GobFileInfo struct {
 type ChangeType int
 
 const (
-	Added ChangeType = iota
-	Modified
-	Deleted
+	ADDED ChangeType = iota
+	MODIFIED
+	DELETED
 )
 
 type Change struct {
@@ -94,6 +95,9 @@ func LogErr(v ...any) {
 
 // GetSnapshotDirectory return current snapshot directory
 func GetSnapshotDirectory() string {
+	if runtime.GOOS == "windows" {
+		return gDataDir + "/" + gStartTime.Format("2006-01-02 15_04_05")
+	}
 	return gDataDir + "/" + gStartTime.Format("2006-01-02 15:04:05")
 }
 
@@ -223,6 +227,7 @@ func LoadPrevDirInfo(dir string, stepsBack int) (DirInfoStruct, error) {
 	return info, nil
 }
 
+// ProcessDirectory collects full directory information
 func ProcessDirectory(dir string) (DirInfoStruct, error) {
 	dir = AbsPath(dir)
 	var info = DirInfoStruct{
@@ -319,12 +324,13 @@ func DeleteOldSnapshots() {
 		}
 	}
 	if len(dirs) <= gCfg.MaxSnapshots {
-		return // no need to delete
+		return // MaxSnapshots not exceeded. No need to delete
 	}
 	sort.Slice(dirs, func(i, j int) bool { // sort dirs (older first)
 		return strings.Compare(dirs[i].Name(), dirs[j].Name()) < 0
 	})
 
+	// delete first (len(dirs) - MaxSnapshots) folders
 	for _, dir := range dirs[0 : len(dirs)-gCfg.MaxSnapshots] {
 		err := os.RemoveAll(gDataDir + "/" + dir.Name())
 		if err != nil {
@@ -334,6 +340,7 @@ func DeleteOldSnapshots() {
 	}
 }
 
+// Diff collects and returns Change list
 func Diff(prevDirInfo, currDirInfo DirInfoStruct) []Change {
 	var prevMap = prevDirInfo.fileMap
 	var currMap = currDirInfo.fileMap
@@ -342,20 +349,20 @@ func Diff(prevDirInfo, currDirInfo DirInfoStruct) []Change {
 		return []Change{} // skip empty map (eg. when first run)
 	}
 
-	var changes []Change
+	var changes []Change // all changes will be collected here
 
 	for key := range currMap {
-		if _, ok := prevMap[key]; !ok {
-			changes = append(changes, Change{key, Added, currMap[key], currMap[key].Size})
+		if _, ok := prevMap[key]; !ok { // exists in current and doesn't exist in prev - means new file ADDED
+			changes = append(changes, Change{key, ADDED, currMap[key], currMap[key].Size})
 		} else {
-			if currMap[key].Size != prevMap[key].Size {
-				changes = append(changes, Change{key, Modified, currMap[key], currMap[key].Size - prevMap[key].Size})
+			if currMap[key].Size != prevMap[key].Size { // exists in both but size is changed - means file MODIFIED
+				changes = append(changes, Change{key, MODIFIED, currMap[key], currMap[key].Size - prevMap[key].Size})
 			}
 		}
 	}
 	for key := range prevMap {
-		if _, ok := currMap[key]; !ok {
-			changes = append(changes, Change{key, Deleted, prevMap[key], 0 - prevMap[key].Size})
+		if _, ok := currMap[key]; !ok { // exists in previous and doesn't exist in current - means file DELETED
+			changes = append(changes, Change{key, DELETED, prevMap[key], 0 - prevMap[key].Size})
 		}
 	}
 
@@ -365,14 +372,15 @@ func Diff(prevDirInfo, currDirInfo DirInfoStruct) []Change {
 	return changes
 }
 
+// PrintDiff calculates and prints directory structure changes
 func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
-	colorModifiedDirPart := color.New(color.BgBlue, color.FgWhite)
-	colorModified := color.New(color.FgHiBlue)
-	colorAdded := color.New(color.FgHiGreen)
-	colorAddedDirPart := color.New(color.BgGreen, color.FgWhite)
-	colorDeleted := color.New(color.FgHiRed)
-	colorDeletedDirPart := color.New(color.BgRed, color.FgWhite)
-	colorDelta := color.New(color.FgHiMagenta)
+	colorModInvr := color.New(color.BgBlue, color.FgWhite)
+	colorModMain := color.New(color.FgHiBlue)
+	colorAddMain := color.New(color.FgHiGreen)
+	colorAddInvr := color.New(color.BgGreen, color.FgWhite)
+	colorDelMain := color.New(color.FgHiRed)
+	colorDelInvr := color.New(color.BgRed, color.FgWhite)
+	colorDeltaSz := color.New(color.FgHiMagenta)
 
 	changes := Diff(prevDirInfo, currDirInfo)
 	if len(changes) == 0 {
@@ -383,24 +391,24 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 
 	for _, change := range changes {
 		relPath := strings.Replace(change.path, AbsPath(currDirInfo.Path), "", 1)
-		var col, colDirPart *color.Color
+		var colMain, colInvr *color.Color
 		var symbol, icon string
 		switch change.changeType {
-		case Added:
+		case ADDED:
 			symbol = "+"
-			col = colorAdded
-			colDirPart = colorAddedDirPart
-		case Modified:
+			colMain = colorAddMain
+			colInvr = colorAddInvr
+		case MODIFIED:
 			symbol = "↗"
 			if change.deltaSize < 0 {
 				symbol = "↘"
 			}
-			col = colorModified
-			colDirPart = colorModifiedDirPart
-		case Deleted:
+			colMain = colorModMain
+			colInvr = colorModInvr
+		case DELETED:
 			symbol = "-"
-			col = colorDeleted
-			colDirPart = colorDeletedDirPart
+			colMain = colorDelMain
+			colInvr = colorDelInvr
 		}
 
 		switch change.gob.IsDir {
@@ -410,20 +418,21 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 			icon = ""
 		}
 
-		col.Printf(" %-2s ", icon)
-		col.Printf("%-2s", symbol)
-		col.Printf("%-10s", HumanSize(change.gob.Size))
-		if change.changeType == Modified {
-			colorDelta.Printf("%-11s", HumanSizeSign(change.deltaSize))
+		colMain.Printf(" %-2s ", icon)
+		colMain.Printf("%-2s", symbol)
+		colMain.Printf("%-10s", HumanSize(change.gob.Size))
+		if change.changeType == MODIFIED {
+			colorDeltaSz.Printf("%-11s", HumanSizeSign(change.deltaSize))
 		} else {
-			colorDelta.Printf("%-11s", "")
+			colorDeltaSz.Printf("%-11s", "")
 		}
-		colDirPart.Print(AbsPath(currDirInfo.Path))
-		col.Print(relPath)
-		col.Println()
+		colInvr.Print(AbsPath(currDirInfo.Path))
+		colMain.Print(relPath)
+		colMain.Println()
 	}
 }
 
+// PrintTable prints summarized table
 func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 	tableWriter := table.NewWriter()
 	tableWriter.SetStyle(table.StyleRounded)

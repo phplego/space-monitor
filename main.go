@@ -44,21 +44,23 @@ type Config struct {
 	DetailedMode bool                       `yaml:"detailed-mode"`
 }
 
+// Config_DirectorySettings directory settings (path etc.)
 type Config_DirectorySettings struct {
 	Path string `yaml:"path"`
 }
 
+// DirInfoStruct contains all collected information about directory during the scan
 type DirInfoStruct struct {
 	Path         string    `yaml:"path"`
 	Size         int64     `yaml:"size"`
 	Files        int       `yaml:"files"`
 	Dirs         int       `yaml:"dirs"`
-	ModTime      time.Time `yaml:"mtime"` // the time of the latest modified file in the directory
 	StartTime    time.Time `yaml:"stime"` // the time when the scan was started
 	walkDuration time.Duration
-	fileMap      map[string]GobFileInfo // for detailed mode
+	fileMap      map[string]GobFileInfo // file details for detailed mode
 }
 
+// GobFileInfo - file info structure saved to the .gob file
 type GobFileInfo struct {
 	IsDir bool
 	Size  int64
@@ -90,6 +92,7 @@ func LogErr(v ...any) {
 	color.New(color.FgHiRed, color.Italic).Println(v...)
 }
 
+// GetSnapshotDirectory return current snapshot directory
 func GetSnapshotDirectory() string {
 	return gDataDir + "/" + gStartTime.Format("2006-01-02 15:04:05")
 }
@@ -150,8 +153,9 @@ func InitStdoutSaver() {
 	fmt2.OutWriter = multiWriter
 }
 
-func SaveDirInfo(path string, dirInfo DirInfoStruct) {
-	pathHash := GetHash(path)
+// SaveDirInfo saves struct to .dat (yaml) and .gob (filemap) files
+func SaveDirInfo(dirInfo DirInfoStruct) {
+	pathHash := GetHash(dirInfo.Path)
 	dirInfoFilePath := fmt.Sprintf(GetSnapshotDirectory()+"/dirinfo-%s.dat", pathHash)
 	dirInfoFile, err := os.OpenFile(dirInfoFilePath, os.O_WRONLY|os.O_CREATE, 0666)
 	// noinspection GoUnhandledErrorResult
@@ -182,6 +186,7 @@ func SaveDirInfo(path string, dirInfo DirInfoStruct) {
 	}
 }
 
+// LoadPrevDirInfo loads previous dir info struct from previous snapshot directory
 func LoadPrevDirInfo(dir string, stepsBack int) (DirInfoStruct, error) {
 	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/*/dirinfo-%s.dat", GetHash(dir)))
 	if files == nil {
@@ -251,10 +256,6 @@ func ProcessDirectory(dir string) (DirInfoStruct, error) {
 				}
 			}
 
-			modTime := fileInfo.ModTime()
-			if modTime.After(info.ModTime) && modTime.Before(time.Now() /*skip Files from the future*/) {
-				info.ModTime = fileInfo.ModTime()
-			}
 			if fileInfo.IsDir() {
 				info.Dirs++
 			} else {
@@ -426,8 +427,8 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 	tableWriter := table.NewWriter()
 	tableWriter.SetStyle(table.StyleRounded)
-	//tableWriter.SetOutputMirror(os.Stdout)
-	tableWriter.AppendHeader(table.Row{"path", "size", "dirs", "files" /*"last modified",*/, "walk time"})
+	tableWriter.SetOutputMirror(fmt2.OutWriter)
+	tableWriter.AppendHeader(table.Row{"path", "size", "dirs", "files", "walk time"})
 
 	for i, currDirInfo := range currSnapshot.infoList {
 		prevDirInfo := prevSnapshot.infoList[i]
@@ -481,8 +482,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 		"", "",
 		time.Since(gStartTime).Round(time.Millisecond),
 	})
-	fmt2.Println(tableWriter.Render())
-
+	tableWriter.Render()
 }
 
 func main() {
@@ -540,7 +540,7 @@ func main() {
 		currSnapshot.infoList = append(currSnapshot.infoList, currDirInfo)
 
 		if !*gNoSave && !*gRepLast {
-			SaveDirInfo(dir.Path, currDirInfo)
+			SaveDirInfo(currDirInfo)
 		}
 
 		// print diff

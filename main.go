@@ -16,7 +16,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
+	runtime "runtime"
 	"sort"
 	"space-monitor/libs/fmt2"
 	"strconv"
@@ -90,15 +90,19 @@ type SnapshotStruct struct {
 
 func LogErr(v ...any) {
 	gLogger.Println(v...)
+	// noinspection GoUnhandledErrorResult
 	color.New(color.FgHiRed, color.Italic).Println(v...)
 }
 
 // GetSnapshotDirectory return current snapshot directory
 func GetSnapshotDirectory() string {
-	if runtime.GOOS == "windows" {
+	switch {
+	// noinspection GoBoolExpressions
+	case runtime.GOOS == "windows":
 		return gDataDir + "/" + gStartTime.Format("2006-01-02 15_04_05")
+	default:
+		return gDataDir + "/" + gStartTime.Format("2006-01-02 15:04:05")
 	}
-	return gDataDir + "/" + gStartTime.Format("2006-01-02 15:04:05")
 }
 
 func InitLogger() {
@@ -373,6 +377,7 @@ func Diff(prevDirInfo, currDirInfo DirInfoStruct) []Change {
 }
 
 // PrintDiff calculates and prints directory structure changes
+// noinspection GoUnhandledErrorResult
 func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 	colorModInvr := color.New(color.BgBlue, color.FgWhite)
 	colorModMain := color.New(color.FgHiBlue)

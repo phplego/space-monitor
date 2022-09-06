@@ -196,7 +196,7 @@ func SaveDirInfo(dirInfo DirInfoStruct) {
 
 // LoadPrevDirInfo loads previous dir info struct from previous snapshot directory
 func LoadPrevDirInfo(dir string, stepsBack int) (DirInfoStruct, error) {
-	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/*/dirinfo-%s.dat", GetHash(dir)))
+	files, _ := filepath.Glob(gDataDir + fmt.Sprintf("/*/dirinfo-%s.dat", GetHash(AbsPath(dir))))
 	if files == nil {
 		fmt2.Println("no dirinfo files for", color.BlueString(dir), "is it first run?")
 		return DirInfoStruct{}, errors.New("no prev dirinfo files")
@@ -451,7 +451,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 
 		if prevDirInfo.Path != "" {
 			if prevDirInfo.Size != currDirInfo.Size {
-				deltaSize = " (" + HumanSizeSign(currDirInfo.Size-prevDirInfo.Size) + ")"
+				deltaSize = " " + HumanSizeSign(currDirInfo.Size-prevDirInfo.Size)
 			}
 			if prevDirInfo.Dirs != currDirInfo.Dirs {
 				deltaDirs = " (" + fmt.Sprintf("%+d", currDirInfo.Dirs-prevDirInfo.Dirs) + ")"
@@ -462,8 +462,8 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 		}
 
 		tableWriter.AppendRow([]interface{}{
-			currDirInfo.Path,
-			HumanSize(currDirInfo.Size) + deltaSize,
+			color.HiBlueString(currDirInfo.Path),
+			HumanSize(currDirInfo.Size) + color.HiMagentaString(deltaSize),
 			strconv.Itoa(currDirInfo.Dirs) + deltaDirs,
 			strconv.Itoa(currDirInfo.Files) + deltaFiles,
 			currDirInfo.walkDuration,
@@ -479,7 +479,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 		})
 	}
 	tableWriter.AppendRow(table.Row{
-		ColorHeaderHi("start time (t₁)"),
+		ColorHeaderHi("curr stime (t₁)"),
 		currSnapshot.StartTime.Format("02 Jan 15:04"),
 		TimeAgo(currSnapshot.StartTime),
 	})
@@ -487,12 +487,12 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 
 	deltaFreeSpace := ""
 	if prevSnapshot.FreeSpace != 0 && prevSnapshot.FreeSpace != currSnapshot.FreeSpace {
-		deltaFreeSpace = " (" + HumanSizeSign(currSnapshot.FreeSpace-prevSnapshot.FreeSpace) + ")"
+		deltaFreeSpace = " " + HumanSizeSign(currSnapshot.FreeSpace-prevSnapshot.FreeSpace)
 	}
 
 	tableWriter.AppendRow(table.Row{
 		"FREE SPACE",
-		color.HiGreenString(HumanSize(currSnapshot.FreeSpace)) + deltaFreeSpace,
+		color.HiGreenString(HumanSize(currSnapshot.FreeSpace)) + color.HiMagentaString(deltaFreeSpace),
 		"", "",
 		time.Since(gStartTime).Round(time.Millisecond),
 	})

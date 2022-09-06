@@ -379,12 +379,12 @@ func Diff(prevDirInfo, currDirInfo DirInfoStruct) []Change {
 // PrintDiff calculates and prints directory structure changes
 // noinspection GoUnhandledErrorResult
 func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
-	colorModInvr := color.New(color.BgBlue, color.FgWhite)
-	colorModMain := color.New(color.FgHiBlue)
 	colorAddMain := color.New(color.FgHiGreen)
-	colorAddInvr := color.New(color.BgGreen, color.FgWhite)
+	colorAddInvr := color.New(color.BgHiGreen, color.FgBlack)
+	colorModMain := color.New(color.FgHiBlue)
+	colorModInvr := color.New(color.BgHiBlue, color.FgBlack)
 	colorDelMain := color.New(color.FgHiRed)
-	colorDelInvr := color.New(color.BgRed, color.FgWhite)
+	colorDelInvr := color.New(color.BgHiRed, color.FgBlack)
 	colorDeltaSz := color.New(color.FgHiMagenta)
 
 	changes := Diff(prevDirInfo, currDirInfo)

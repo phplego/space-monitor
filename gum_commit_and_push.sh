@@ -33,10 +33,10 @@ if [[ `git diff --stat @{upstream}` ]]; then
   gum confirm "Unpushed commits found. Do you want to push them?" || exit
 
   git push || echo "Push failed!" && exit
-  echo "Pushed successfully"
+  gum style --foreground 10 "Pushed successfully"
 else
   # No Unpushed commits
-  echo "No diff with remote. Everything up to date. Exit"
+  gum style --foreground 10 "No diff with remote. Everything up to date. Exit"
 fi
 
 

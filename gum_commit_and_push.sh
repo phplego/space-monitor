@@ -27,7 +27,7 @@ fi
 
 # PUSH
 # ----
-if [[ `git diff --stat origin/main` ]]; then
+if [[ `git diff --stat @{upstream}` ]]; then
   # Unpushed commits
   git diff --stat @{upstream}
   gum confirm "Unpushed commits found. Do you want to push them?" || exit

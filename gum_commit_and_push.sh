@@ -14,7 +14,7 @@ if [[ `git status --porcelain` ]]; then
   gum confirm "Add these files?" || exit
 
   echo "Choose files to add:"
-  SELECTED=$(git status --porcelain | sed s/^...// | gum choose --no-limit)
+  SELECTED=$(git status --porcelain | sed s/^...// | gum choose --no-limit) || exit
   while read file ; do
     echo "adding file $file"
     git add $file

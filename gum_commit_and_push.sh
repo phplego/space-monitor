@@ -34,6 +34,7 @@ if [[ `git diff --stat @{upstream}` ]]; then
 
   git push || echo "Push failed!" && exit
   gum style --foreground 10 "Pushed successfully!"
+  echo "Pushed successfully"
 else
   # No Unpushed commits
   gum style --foreground 10 "No diff with remote. Everything up to date. Exit"

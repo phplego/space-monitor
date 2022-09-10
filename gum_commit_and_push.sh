@@ -32,7 +32,7 @@ if [[ `git diff --stat @{upstream}` ]]; then
   git diff --stat @{upstream}
   gum confirm "Unpushed commits found. Do you want to push them?" || exit
 
-  git push || echo "Push failed!" && exit
+  git push || (echo "Push failed!" && exit)
   gum style --foreground 10 "Pushed successfully!"
   echo "Pushed successfully"
 else

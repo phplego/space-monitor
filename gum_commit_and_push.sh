@@ -13,7 +13,13 @@ if [[ `git status --porcelain` ]]; then
 
   gum confirm "Add these files?" || exit
 
-  git add . # ADD EVERYTHING!
+  echo "Choose files to add:"
+  SELECTED=$(git status --porcelain | sed s/^...// | gum choose --no-limit)
+  while read file ; do
+    echo "adding file $file"
+    git add $file
+  done <<< $SELECTED
+
 
   DESC=$(gum input --placeholder "Details of this change [ENTER to finish]") || exit
 
@@ -24,6 +30,7 @@ else
   # No changes
   echo "No local changes."
 fi
+
 
 # PUSH
 # ----

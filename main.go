@@ -440,6 +440,7 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 // PrintTable prints summarized table
 func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 	tableWriter := table.NewWriter()
+	tableWriter.SetTitle("%d directories", len(currSnapshot.infoList))
 	tableWriter.SetStyle(table.StyleRounded)
 	tableWriter.SetOutputMirror(fmt2.OutWriter)
 	tableWriter.AppendHeader(table.Row{"path", "size", "dirs", "files", "walk time"})

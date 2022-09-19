@@ -6,7 +6,7 @@ gum style \
   "EXECUTE GO FILE"
 
 echo "Choose file to execute:"
-echo 
+echo
 SELECTED=$(ls *.go | gum choose) || exit
 while read file ; do
   echo "execute file $file ..."
@@ -14,5 +14,6 @@ while read file ; do
 done <<< $SELECTED
 
 
-read -p "Press any key to exit..."
+gum spin --title "Sleep for 5 seconds.." -- sleep 5
+
 

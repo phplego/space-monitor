@@ -33,6 +33,7 @@ var (
 	gRepLast    = flag.Bool("replast", false, "Repeat last results")
 	gNoSave     = flag.Bool("nosave", false, "Don't save state")
 	gDaemonMode = flag.Bool("daemon", false, "Run in background")
+	gConfigFile = flag.String("config", "config.yaml", "Config file")
 
 	// paths and files
 	gDataDir = GetAppDir() + "/data"
@@ -127,7 +128,7 @@ func InitConfig() {
 	gCfg.DetailedMode = false
 
 	// load file
-	err := cleanenv.ReadConfig(GetAppDir()+"/config.yaml", &gCfg)
+	err := cleanenv.ReadConfig(*gConfigFile, &gCfg)
 	if err != nil {
 		LogErr(err)
 	}

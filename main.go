@@ -89,6 +89,15 @@ type SnapshotStruct struct {
 	infoList  []DirInfoStruct
 }
 
+func GetConfigFileAbs() string {
+	// check if config file path is absolute
+	if filepath.IsAbs(*gConfigFile) {
+		return *gConfigFile
+	} else {
+		return GetAppDir() + "/" + *gConfigFile // prepend with AppDir
+	}
+}
+
 func LogErr(v ...any) {
 	gLogger.Println(v...)
 	// noinspection GoUnhandledErrorResult
@@ -127,15 +136,8 @@ func InitConfig() {
 	gCfg.MaxSnapshots = 20
 	gCfg.DetailedMode = false
 
-	realFilePath := *gConfigFile // gConfigFile path can be either relative or absolute
-
-	// check if config file path is relative
-	if !filepath.IsAbs(realFilePath) {
-		realFilePath = GetAppDir() + "/" + realFilePath // prepend with AppDir
-	}
-
 	// load file
-	err := cleanenv.ReadConfig(realFilePath, &gCfg)
+	err := cleanenv.ReadConfig(GetConfigFileAbs(), &gCfg)
 	if err != nil {
 		LogErr(err)
 	}
@@ -516,6 +518,11 @@ func main() {
 	InitDataDirs()
 	InitStdoutSaver()
 
+	fmt.Println()
+	fmt.Println(" SPACE MONITOR ")
+	fmt.Print(" config: ")
+	color.New(color.BgHiBlack).Print(" " + GetConfigFileAbs() + " ")
+
 	var stepsBack = 0
 	if *gRepLast {
 		stepsBack = 1 // pre-previous
@@ -575,6 +582,8 @@ func main() {
 	// print result table
 	fmt2.Println()
 	PrintTable(prevSnapshot, currSnapshot)
+
+	fmt.Println()
 
 	DeleteOldSnapshots()
 

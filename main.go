@@ -127,8 +127,15 @@ func InitConfig() {
 	gCfg.MaxSnapshots = 20
 	gCfg.DetailedMode = false
 
+	realFilePath := *gConfigFile // gConfigFile path can be either relative or absolute
+
+	// check if config file path is relative
+	if !filepath.IsAbs(realFilePath) {
+		realFilePath = GetAppDir() + "/" + realFilePath // prepend with AppDir
+	}
+
 	// load file
-	err := cleanenv.ReadConfig(*gConfigFile, &gCfg)
+	err := cleanenv.ReadConfig(realFilePath, &gCfg)
 	if err != nil {
 		LogErr(err)
 	}

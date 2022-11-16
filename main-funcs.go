@@ -100,6 +100,7 @@ func GetFreeSpace() (int64, error) {
 
 func GetAppDir() string {
 	path, _ := os.Executable()
+	path, _ = filepath.EvalSymlinks(path)
 	return filepath.Dir(path)
 }
 

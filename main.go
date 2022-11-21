@@ -518,9 +518,9 @@ func main() {
 	InitDataDirs()
 	InitStdoutSaver()
 
-	fmt.Println()
-	fmt.Println(" SPACE MONITOR ")
-	fmt.Print(" config: ")
+	fmt2.Println()
+	fmt2.Println(" SPACE MONITOR")
+	fmt2.Print(" config: ")
 	color.New(color.BgHiBlack).Print(" " + GetConfigFileAbs() + " ")
 
 	var stepsBack = 0

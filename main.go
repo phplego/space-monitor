@@ -473,7 +473,7 @@ func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
 		}
 
 		tableWriter.AppendRow([]interface{}{
-			color.HiBlueString(currDirInfo.Path),
+			color.HiBlueString(shorifyPath(currDirInfo.Path)),
 			HumanSize(currDirInfo.Size) + color.HiMagentaString(deltaSize),
 			strconv.Itoa(currDirInfo.Dirs) + deltaDirs,
 			strconv.Itoa(currDirInfo.Files) + deltaFiles,

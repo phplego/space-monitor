@@ -121,3 +121,14 @@ func AbsPath(path string) string {
 	}
 	return path
 }
+
+func shorifyPath(absPath string) string {
+	usr, err := user.Current()
+	if err != nil {
+		return absPath
+	}
+	if strings.HasPrefix(absPath, usr.HomeDir) {
+		return strings.Replace(absPath, usr.HomeDir, "~", 1)
+	}
+	return absPath
+}

@@ -41,6 +41,7 @@ var (
 
 // Config is an application configuration structure
 type Config struct {
+	Title        string                     `yaml:"title"`
 	Dirs         []Config_DirectorySettings `yaml:"dirs"`
 	MaxSnapshots int                        `yaml:"max-snapshots"`
 	DetailedMode bool                       `yaml:"detailed-mode"`
@@ -449,8 +450,13 @@ func PrintDiff(prevDirInfo, currDirInfo DirInfoStruct) {
 
 // PrintTable prints summarized table
 func PrintTable(prevSnapshot, currSnapshot SnapshotStruct) {
+	title := gCfg.Title
+	if title == "" {
+		title, _ = os.Hostname()
+		title = strings.ToUpper(title)
+	}
 	tableWriter := table.NewWriter()
-	tableWriter.SetTitle("%d directories", len(currSnapshot.infoList))
+	tableWriter.SetTitle("%s - %d directories", color.New(color.Bold, color.FgHiYellow).Sprintf(title), len(currSnapshot.infoList))
 	tableWriter.SetStyle(table.StyleRounded)
 	tableWriter.SetOutputMirror(fmt2.OutWriter)
 	tableWriter.AppendHeader(table.Row{"path", "size", "dirs", "files", "walk time"})
